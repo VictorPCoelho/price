@@ -183,6 +183,83 @@ def test_localizar_avisa_pagina_escaneada():
     assert any("sem texto" in a for a in avisos)
 
 
+# ------------------------------------------------------- etiquetas e logo
+def test_etiquetas_nao_se_sobrepoem():
+    """Códigos empilhados (como em catálogos com várias refs por foto)
+    não podem gerar etiquetas umas em cima das outras."""
+    doc = fitz.open()
+    page = doc.new_page()
+    for i, ref in enumerate(["47187", "47188", "47189"]):
+        page.insert_text((72, 100 + i * 14), f"REF {ref}", fontsize=10)
+    pdf = doc.tobytes()
+    doc.close()
+
+    ocorrencias, _ = localizar_codigos(pdf, ["47187", "47188", "47189"])
+    itens = []
+    for cod, ocs in ocorrencias.items():
+        for oc in ocs:
+            itens.append(ItemCarimbo(
+                pagina=oc.pagina, bbox=oc.bbox, novo_valor=0.0,
+                linhas_etiqueta=[f"1 a 3: R$ {cod[-2:]},90", "4 a 8: R$ 99,90"],
+            ))
+    doc = fitz.open(stream=carimbar(pdf, itens, modo="adicionar"), filetype="pdf")
+    # reconstrói os retângulos desenhados (fills) e checa interseção 2 a 2
+    fills = [d["rect"] for d in doc[0].get_drawings() if d.get("fill")]
+    doc.close()
+    assert len(fills) == 3
+    for i in range(len(fills)):
+        for j in range(i + 1, len(fills)):
+            assert not fills[i].intersects(fills[j]), (fills[i], fills[j])
+
+
+def test_cor_da_etiqueta_personalizada():
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "REF 1023", fontsize=10)
+    pdf = doc.tobytes()
+    doc.close()
+    ocs, _ = localizar_codigos(pdf, ["1023"])
+    itens = [ItemCarimbo(pagina=0, bbox=ocs["1023"][0].bbox, novo_valor=59.90)]
+    saida = carimbar(pdf, itens, modo="adicionar", cor_etiqueta=(0.1, 0.3, 0.6))
+    doc = fitz.open(stream=saida, filetype="pdf")
+    fills = [d["fill"] for d in doc[0].get_drawings() if d.get("fill")]
+    doc.close()
+    assert any(abs(f[0] - 0.1) < 0.02 and abs(f[2] - 0.6) < 0.02 for f in fills)
+
+
+def test_inserir_logo_primeira_pagina():
+    from precificador.carimbo import inserir_logo
+
+    doc = fitz.open()
+    doc.new_page()
+    doc.new_page()
+    pdf = doc.tobytes()
+    doc.close()
+
+    # logo: PNG pequeno gerado na hora
+    img = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 40, 20))
+    img.set_rect(img.irect, (200, 30, 60))
+    logo = img.tobytes("png")
+
+    saida = inserir_logo(pdf, logo, posicao="inferior-direito", largura_frac=0.2)
+    doc = fitz.open(stream=saida, filetype="pdf")
+    assert len(doc[0].get_images()) == 1
+    assert len(doc[1].get_images()) == 0  # só na primeira página
+    doc.close()
+
+    saida = inserir_logo(pdf, logo, todas_as_paginas=True)
+    doc = fitz.open(stream=saida, filetype="pdf")
+    assert len(doc[0].get_images()) == 1 and len(doc[1].get_images()) == 1
+    doc.close()
+
+
+def test_hex_para_rgb():
+    from precificador.regras import hex_para_rgb
+    assert hex_para_rgb("#FFFFFF") == (1.0, 1.0, 1.0)
+    r, g, b = hex_para_rgb("#3D3D45")
+    assert abs(r - 0.239) < 0.01 and abs(b - 0.27) < 0.01
+
+
 # ---------------------------------------------------------- fluxo completo
 def test_fluxo_dois_arquivos_carimba_preco_ao_lado():
     pdf = _catalogo_com_codigos()

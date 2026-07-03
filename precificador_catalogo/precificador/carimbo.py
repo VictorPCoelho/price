@@ -65,10 +65,14 @@ def _tamanho_fonte_que_cabe(texto: str, largura: float, altura: float) -> float:
     return max(tamanho, 4)
 
 
+COR_ETIQUETA_PADRAO = (0.24, 0.24, 0.27)  # grafite neutro
+
+
 def carimbar(
     pdf_bytes: bytes,
     itens: list[ItemCarimbo],
     modo: str = "substituir",
+    cor_etiqueta: tuple[float, float, float] = COR_ETIQUETA_PADRAO,
 ) -> bytes:
     """Aplica os carimbos e retorna os bytes do novo PDF.
 
@@ -90,11 +94,19 @@ def carimbar(
         if modo == "substituir":
             _substituir_na_pagina(page, itens_pagina)
         else:
+            # etiquetas não podem cobrir os códigos nem umas às outras;
+            # os demais textos da página são evitados quando há espaço
+            obstaculos = [fitz.Rect(i.bbox) for i in itens_pagina]
+            textos_da_pagina = [fitz.Rect(w[:4]) for w in page.get_text("words")]
             for item in itens_pagina:
                 linhas = item.linhas_etiqueta or [
                     formatar_brl(item.novo_valor, com_rs=item.tinha_rs)
                 ]
-                _adicionar(page, item.bbox, linhas)
+                etiqueta = _adicionar(
+                    page, item.bbox, linhas, obstaculos, cor_etiqueta,
+                    evitar_se_der=textos_da_pagina,
+                )
+                obstaculos.append(etiqueta)
 
     saida = doc.tobytes(garbage=3, deflate=True)
     doc.close()
@@ -134,19 +146,65 @@ def _substituir_na_pagina(page: fitz.Page, itens: list[ItemCarimbo]) -> None:
         )
 
 
-def _adicionar(page: fitz.Page, bbox: tuple, linhas: list[str]) -> None:
-    """Desenha uma etiqueta com o(s) novo(s) preço(s) logo abaixo do original."""
+def _adicionar(
+    page: fitz.Page,
+    bbox: tuple,
+    linhas: list[str],
+    obstaculos: list[fitz.Rect],
+    cor: tuple[float, float, float] = COR_ETIQUETA_PADRAO,
+    evitar_se_der: list[fitz.Rect] | None = None,
+) -> fitz.Rect:
+    """Desenha uma etiqueta com o(s) novo(s) preço(s) perto do código.
+
+    Tenta várias posições (abaixo, à direita, acima, mais abaixo...) até
+    achar uma que não cubra os códigos nem as outras etiquetas da página
+    (``obstaculos``, obrigatórios). Os retângulos de ``evitar_se_der``
+    (demais textos da página) só são respeitados se alguma posição
+    permitir. Retorna o retângulo usado, para entrar nos obstáculos.
+    """
     x0, y0, x1, y1 = bbox
     altura_linha = (y1 - y0) * 1.1
     tamanho = _tamanho_fonte_que_cabe("Ag", 10_000, altura_linha * 0.8)
     fonte = fitz.Font(_FONTE_NEGRITO)
     largura_texto = max(fonte.text_length(t, fontsize=tamanho) for t in linhas)
     pad = 3
-    altura_total = altura_linha * len(linhas)
-    etiqueta = fitz.Rect(x0, y1 + 1, x0 + largura_texto + 2 * pad, y1 + 1 + altura_total)
-    if etiqueta.y1 > page.rect.y1:  # sem espaço abaixo: desenha acima
-        etiqueta = fitz.Rect(x0, y0 - 1 - altura_total, x0 + largura_texto + 2 * pad, y0 - 1)
-    page.draw_rect(etiqueta, color=None, fill=(0.85, 0.1, 0.2), radius=0.2 / len(linhas))
+    w = largura_texto + 2 * pad
+    h = altura_linha * len(linhas)
+
+    afasta = 4  # maior que a folga de 2pt da checagem de colisão
+    candidatas = [
+        fitz.Rect(x0, y1 + afasta, x0 + w, y1 + afasta + h),      # abaixo
+        fitz.Rect(x1 + afasta, y0, x1 + afasta + w, y0 + h),      # à direita
+        fitz.Rect(x0, y0 - afasta - h, x0 + w, y0 - afasta),      # acima
+        fitz.Rect(x0 - afasta - w, y0, x0 - afasta, y0 + h),      # à esquerda
+    ]
+    # desce em passos, para pilhas de códigos próximos
+    for passo in range(1, 6):
+        desloc = (h + 2) * passo
+        candidatas.append(
+            fitz.Rect(x0, y1 + afasta + desloc, x0 + w, y1 + afasta + desloc + h)
+        )
+
+    # o próprio código não é obstáculo para a etiqueta dele
+    propria = fitz.Rect(bbox)
+
+    def _livre(r: fitz.Rect, extras: list[fitz.Rect]) -> bool:
+        if not (page.rect.x0 <= r.x0 and r.x1 <= page.rect.x1
+                and page.rect.y0 <= r.y0 and r.y1 <= page.rect.y1):
+            return False
+        folga = fitz.Rect(r.x0 - 2, r.y0 - 2, r.x1 + 2, r.y1 + 2)
+        return not any(
+            folga.intersects(o) for o in obstaculos if o != propria
+        ) and not any(folga.intersects(o) for o in extras)
+
+    # 1ª passada: sem cobrir nenhum texto da página; 2ª: só os obrigatórios
+    etiqueta = next(
+        (r for r in candidatas if _livre(r, evitar_se_der or [])),
+        next((r for r in candidatas if _livre(r, [])), candidatas[0]),
+    )
+
+    page.draw_rect(etiqueta, color=None, fill=cor, radius=0.2 / len(linhas))
+    cor_texto = _cor_do_texto(cor)
     for i, texto in enumerate(linhas):
         topo = etiqueta.y0 + i * altura_linha
         baseline = topo + altura_linha - (altura_linha - tamanho * 0.75) / 2
@@ -155,8 +213,58 @@ def _adicionar(page: fitz.Page, bbox: tuple, linhas: list[str]) -> None:
             texto,
             fontname=_FONTE_NEGRITO,
             fontsize=tamanho,
-            color=(1, 1, 1),
+            color=cor_texto,
         )
+    return etiqueta
+
+
+POSICOES_LOGO = {
+    "superior-esquerdo": "Canto superior esquerdo",
+    "superior-direito": "Canto superior direito",
+    "inferior-esquerdo": "Canto inferior esquerdo",
+    "inferior-direito": "Canto inferior direito",
+}
+
+
+def inserir_logo(
+    pdf_bytes: bytes,
+    logo_bytes: bytes,
+    posicao: str = "inferior-direito",
+    largura_frac: float = 0.20,
+    todas_as_paginas: bool = False,
+    margem: float = 16.0,
+) -> bytes:
+    """Insere o logo da marca (PNG/JPG) na primeira página (ou em todas).
+
+    ``largura_frac`` é a largura do logo como fração da largura da página;
+    a altura acompanha a proporção da imagem.
+    """
+    if posicao not in POSICOES_LOGO:
+        raise ValueError(f"Posição de logo desconhecida: {posicao}")
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    img = fitz.open(stream=logo_bytes)
+    prop = img[0].rect.height / img[0].rect.width if img[0].rect.width else 1.0
+    img.close()
+
+    paginas = range(len(doc)) if todas_as_paginas else [0]
+    for num in paginas:
+        page = doc[num]
+        pw, ph = page.rect.width, page.rect.height
+        w = pw * largura_frac
+        h = w * prop
+        if "esquerdo" in posicao:
+            x0 = margem
+        else:
+            x0 = pw - margem - w
+        if "superior" in posicao:
+            y0 = margem
+        else:
+            y0 = ph - margem - h
+        page.insert_image(fitz.Rect(x0, y0, x0 + w, y0 + h),
+                          stream=logo_bytes, keep_proportion=True)
+    saida = doc.tobytes(garbage=3, deflate=True)
+    doc.close()
+    return saida
 
 
 def imagem_pagina(pdf_bytes: bytes, pagina: int, destaques: list[tuple] | None = None,

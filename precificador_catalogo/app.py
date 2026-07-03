@@ -15,7 +15,13 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from precificador.carimbo import ItemCarimbo, carimbar, imagem_pagina
+from precificador.carimbo import (
+    POSICOES_LOGO,
+    ItemCarimbo,
+    carimbar,
+    imagem_pagina,
+    inserir_logo,
+)
 from precificador.extracao import extrair_precos, localizar_codigos
 from precificador.regras import (
     ARREDONDAMENTOS,
@@ -24,6 +30,7 @@ from precificador.regras import (
     RepositorioPerfis,
     calcular_preco,
     formatar_brl,
+    hex_para_rgb,
 )
 from precificador.tabela import (
     adivinhar_colunas,
@@ -76,6 +83,12 @@ perfil.exigir_rs = st.sidebar.toggle(
     help="Mais seguro. Desligue apenas se o catálogo mostra os preços sem o "
     "símbolo R$ (aí números como 99,90 também serão detectados).",
 )
+perfil.cor_etiqueta = st.sidebar.color_picker(
+    "Cor da etiqueta de preço", value=perfil.cor_etiqueta,
+    help="Cor de fundo da etiqueta no modo “adicionar”. O texto fica branco "
+    "ou preto automaticamente, conforme o contraste.",
+)
+
 with st.sidebar.expander("Limites para alerta"):
     perfil.valor_minimo = st.number_input(
         "Alertar se preço original abaixo de (R$)", value=float(perfil.valor_minimo), step=1.0
@@ -83,6 +96,56 @@ with st.sidebar.expander("Limites para alerta"):
     perfil.valor_maximo = st.number_input(
         "Alertar se preço original acima de (R$)", value=float(perfil.valor_maximo), step=10.0
     )
+
+# ----- logo do grupo de compras (fica salvo para as próximas vezes)
+PASTA_LOGOS = Path(__file__).parent / "logos"
+
+
+def _caminho_logo() -> Path:
+    nome_seguro = "".join(c if c.isalnum() else "_" for c in perfil.nome) or "logo"
+    return PASTA_LOGOS / f"{nome_seguro}.png"
+
+
+with st.sidebar.expander("🏷️ Logo do seu grupo"):
+    logo_enviado = st.file_uploader(
+        "Imagem do logo (PNG ou JPG)", type=["png", "jpg", "jpeg"], key="logo_upload"
+    )
+    if logo_enviado is not None:
+        PASTA_LOGOS.mkdir(exist_ok=True)
+        _caminho_logo().write_bytes(logo_enviado.getvalue())
+        st.success("Logo salvo — será usado automaticamente nas próximas vezes.")
+    logo_bytes = _caminho_logo().read_bytes() if _caminho_logo().exists() else None
+    if logo_bytes:
+        st.image(logo_bytes, width=120)
+        perfil.usar_logo = st.toggle("Inserir o logo no PDF gerado", value=perfil.usar_logo)
+        perfil.logo_posicao = st.selectbox(
+            "Posição", list(POSICOES_LOGO),
+            index=list(POSICOES_LOGO).index(perfil.logo_posicao),
+            format_func=POSICOES_LOGO.get,
+        )
+        perfil.logo_largura = st.slider(
+            "Tamanho (% da largura da página)", 5, 50, int(perfil.logo_largura)
+        )
+        perfil.logo_todas_paginas = st.toggle(
+            "Em todas as páginas (desligado = só na primeira)",
+            value=perfil.logo_todas_paginas,
+        )
+    else:
+        st.caption("Envie o logo uma vez; ele fica salvo para as próximas vezes.")
+
+
+def _aplicar_logo(pdf: bytes) -> bytes:
+    if logo_bytes and perfil.usar_logo:
+        return inserir_logo(
+            pdf, logo_bytes,
+            posicao=perfil.logo_posicao,
+            largura_frac=perfil.logo_largura / 100,
+            todas_as_paginas=perfil.logo_todas_paginas,
+        )
+    return pdf
+
+
+COR_ETIQUETA_RGB = hex_para_rgb(perfil.cor_etiqueta)
 
 if st.sidebar.button("💾 Salvar perfil da marca", use_container_width=True):
     if not perfil.nome or perfil.nome == "Nova marca":
@@ -242,14 +305,20 @@ if FLUXO_UM:
         st.image(imagem_pagina(pdf_bytes, pagina_escolhida - 1, destaques=destaques))
     with col_depois:
         st.markdown("**Precificado**")
-        pdf_previa = carimbar(pdf_bytes, itens_da_pagina, modo=perfil.modo_carimbo)
+        pdf_previa = _aplicar_logo(carimbar(
+            pdf_bytes, itens_da_pagina, modo=perfil.modo_carimbo,
+            cor_etiqueta=COR_ETIQUETA_RGB,
+        ))
         st.image(imagem_pagina(pdf_previa, pagina_escolhida - 1))
 
     st.subheader("4️⃣ Gerar o PDF precificado")
     if st.button("✅ Gerar PDF precificado", type="primary"):
         itens = _tabela_para_itens(tabela, precos)
         with st.spinner("Carimbando os preços..."):
-            resultado = carimbar(pdf_bytes, itens, modo=perfil.modo_carimbo)
+            resultado = _aplicar_logo(carimbar(
+                pdf_bytes, itens, modo=perfil.modo_carimbo,
+                cor_etiqueta=COR_ETIQUETA_RGB,
+            ))
         st.session_state.resultado = resultado
         st.session_state.resultado_nome = arquivo.name.replace(".pdf", "") + "_precificado.pdf"
         total = sum(i.novo_valor for i in itens)
@@ -462,7 +531,9 @@ else:
         st.image(imagem_pagina(pdf_bytes, pagina_escolhida - 1, destaques=destaques))
     with col_depois:
         st.markdown("**Precificado** (preço ao lado do código)")
-        pdf_previa = carimbar(pdf_bytes, itens_previa, modo="adicionar")
+        pdf_previa = _aplicar_logo(carimbar(
+            pdf_bytes, itens_previa, modo="adicionar", cor_etiqueta=COR_ETIQUETA_RGB,
+        ))
         st.image(imagem_pagina(pdf_previa, pagina_escolhida - 1))
 
     # ----- gerar
@@ -470,7 +541,9 @@ else:
     if st.button("✅ Gerar PDF precificado", type="primary"):
         itens = _itens_fluxo2(tabela_ui)
         with st.spinner("Carimbando os preços..."):
-            resultado = carimbar(pdf_bytes, itens, modo="adicionar")
+            resultado = _aplicar_logo(carimbar(
+                pdf_bytes, itens, modo="adicionar", cor_etiqueta=COR_ETIQUETA_RGB,
+            ))
         st.session_state.resultado2 = resultado
         st.session_state.resultado2_nome = (
             arq_catalogo.name.replace(".pdf", "") + "_precificado.pdf"

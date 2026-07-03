@@ -50,6 +50,12 @@ def formatar_brl(valor: float, com_rs: bool = True) -> str:
     return f"R$ {texto}" if com_rs else texto
 
 
+def hex_para_rgb(cor_hex: str) -> tuple[float, float, float]:
+    """Converte "#3D3D45" em (r, g, b) na faixa 0..1."""
+    cor = cor_hex.lstrip("#")
+    return tuple(int(cor[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
 @dataclass
 class PerfilMarca:
     """Configuração de precificação de uma marca de catálogo."""
@@ -61,6 +67,11 @@ class PerfilMarca:
     exigir_rs: bool = True
     valor_minimo: float = 1.0  # abaixo disso o item é sinalizado para revisão
     valor_maximo: float = 2000.0  # acima disso o item é sinalizado para revisão
+    cor_etiqueta: str = "#3D3D45"  # cor de fundo da etiqueta (grafite neutro)
+    usar_logo: bool = True  # inserir o logo salvo da marca ao gerar o PDF
+    logo_posicao: str = "inferior-direito"  # chave de POSICOES_LOGO
+    logo_largura: int = 20  # largura do logo em % da largura da página
+    logo_todas_paginas: bool = False  # False = só na primeira página
 
 
 class RepositorioPerfis:

@@ -183,6 +183,42 @@ def test_localizar_avisa_pagina_escaneada():
     assert any("sem texto" in a for a in avisos)
 
 
+def test_tabela_pdf_blocos_lado_a_lado_com_grade():
+    """Reproduz o layout de tabela com blocos lado a lado
+    ("Código Grade Preço | Código Grade Preço") e o mesmo código repetido
+    em linhas seguidas com grades diferentes."""
+    doc = fitz.open()
+    page = doc.new_page()
+    # cabeçalho dos dois blocos
+    for x in (36, 196):
+        page.insert_text((x, 36), "Código", fontsize=8)
+        page.insert_text((x + 54, 36), "Grade", fontsize=8)
+        page.insert_text((x + 108, 36), "Preço", fontsize=8)
+    # bloco 1: mesmo código com duas grades; bloco 2: outro código
+    dados_linhas = [
+        (48, [("1.264.006", "B/MB/GB/GG", "59,90"), ("1.264.030", "B/MB/GB/GG", "87,90")]),
+        (63, [("1.264.006", "1/2/3", "65,90"), ("1.264.030", "1/2/3", "89,90")]),
+        (78, [("1.264.007", "B/MB/GB/GG", "41,90"), ("1.264.031", "ÚNICO", "99,90")]),
+    ]
+    for y, blocos in dados_linhas:
+        for k, (cod, grade, preco) in enumerate(blocos):
+            x = 36 + k * 160
+            page.insert_text((x - 3, y), cod, fontsize=8)
+            page.insert_text((x + 44, y), grade, fontsize=8)
+            page.insert_text((x + 103, y), "R$", fontsize=8)
+            page.insert_text((x + 121, y), preco, fontsize=8)
+    dados = doc.tobytes()
+    doc.close()
+
+    linhas, avisos = ler_tabela_pdf(dados)
+    assert avisos == []
+    por = {l.codigo: _precos(l) for l in linhas}
+    assert por["1264006"] == [("B/MB/GB/GG", 59.90), ("1/2/3", 65.90)]
+    assert por["1264030"] == [("B/MB/GB/GG", 87.90), ("1/2/3", 89.90)]
+    assert por["1264007"] == [("B/MB/GB/GG", 41.90)]
+    assert por["1264031"] == [("ÚNICO", 99.90)]
+
+
 # ------------------------------------------------------- etiquetas e logo
 def test_etiquetas_nao_se_sobrepoem():
     """Códigos empilhados (como em catálogos com várias refs por foto)

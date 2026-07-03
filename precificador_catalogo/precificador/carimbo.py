@@ -20,6 +20,9 @@ class ItemCarimbo:
     bbox: tuple[float, float, float, float]  # bbox do preço original
     novo_valor: float
     tinha_rs: bool = True
+    # No modo "adicionar", linhas de texto customizadas para a etiqueta
+    # (ex.: um preço por faixa de tamanho). Se None, usa o novo_valor.
+    linhas_etiqueta: list[str] | None = None
 
 
 def _cor_de_fundo(page: fitz.Page, bbox: tuple) -> tuple[float, float, float]:
@@ -88,8 +91,10 @@ def carimbar(
             _substituir_na_pagina(page, itens_pagina)
         else:
             for item in itens_pagina:
-                _adicionar(page, item.bbox,
-                           formatar_brl(item.novo_valor, com_rs=item.tinha_rs))
+                linhas = item.linhas_etiqueta or [
+                    formatar_brl(item.novo_valor, com_rs=item.tinha_rs)
+                ]
+                _adicionar(page, item.bbox, linhas)
 
     saida = doc.tobytes(garbage=3, deflate=True)
     doc.close()
@@ -129,26 +134,29 @@ def _substituir_na_pagina(page: fitz.Page, itens: list[ItemCarimbo]) -> None:
         )
 
 
-def _adicionar(page: fitz.Page, bbox: tuple, texto: str) -> None:
-    """Desenha uma etiqueta com o novo preço logo abaixo do original."""
+def _adicionar(page: fitz.Page, bbox: tuple, linhas: list[str]) -> None:
+    """Desenha uma etiqueta com o(s) novo(s) preço(s) logo abaixo do original."""
     x0, y0, x1, y1 = bbox
-    altura = (y1 - y0) * 1.1
-    tamanho = _tamanho_fonte_que_cabe(texto, 10_000, altura * 0.8)
+    altura_linha = (y1 - y0) * 1.1
+    tamanho = _tamanho_fonte_que_cabe("Ag", 10_000, altura_linha * 0.8)
     fonte = fitz.Font(_FONTE_NEGRITO)
-    largura_texto = fonte.text_length(texto, fontsize=tamanho)
+    largura_texto = max(fonte.text_length(t, fontsize=tamanho) for t in linhas)
     pad = 3
-    etiqueta = fitz.Rect(x0, y1 + 1, x0 + largura_texto + 2 * pad, y1 + 1 + altura)
+    altura_total = altura_linha * len(linhas)
+    etiqueta = fitz.Rect(x0, y1 + 1, x0 + largura_texto + 2 * pad, y1 + 1 + altura_total)
     if etiqueta.y1 > page.rect.y1:  # sem espaço abaixo: desenha acima
-        etiqueta = fitz.Rect(x0, y0 - 1 - altura, x0 + largura_texto + 2 * pad, y0 - 1)
-    page.draw_rect(etiqueta, color=None, fill=(0.85, 0.1, 0.2), radius=0.2)
-    baseline = etiqueta.y1 - (etiqueta.height - tamanho * 0.75) / 2
-    page.insert_text(
-        fitz.Point(etiqueta.x0 + pad, baseline),
-        texto,
-        fontname=_FONTE_NEGRITO,
-        fontsize=tamanho,
-        color=(1, 1, 1),
-    )
+        etiqueta = fitz.Rect(x0, y0 - 1 - altura_total, x0 + largura_texto + 2 * pad, y0 - 1)
+    page.draw_rect(etiqueta, color=None, fill=(0.85, 0.1, 0.2), radius=0.2 / len(linhas))
+    for i, texto in enumerate(linhas):
+        topo = etiqueta.y0 + i * altura_linha
+        baseline = topo + altura_linha - (altura_linha - tamanho * 0.75) / 2
+        page.insert_text(
+            fitz.Point(etiqueta.x0 + pad, baseline),
+            texto,
+            fontname=_FONTE_NEGRITO,
+            fontsize=tamanho,
+            color=(1, 1, 1),
+        )
 
 
 def imagem_pagina(pdf_bytes: bytes, pagina: int, destaques: list[tuple] | None = None,

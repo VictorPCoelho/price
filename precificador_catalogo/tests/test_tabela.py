@@ -65,30 +65,48 @@ def _planilha_exemplo() -> bytes:
     return buf.getvalue()
 
 
+def _precos(linha):
+    return [(p.rotulo, p.valor) for p in linha.precos]
+
+
 def test_ler_planilha_e_adivinhar_colunas():
     df = ler_planilha(_planilha_exemplo(), "precos.xlsx")
-    col_codigo, col_preco = adivinhar_colunas(df)
+    col_codigo, cols_preco = adivinhar_colunas(df)
     assert col_codigo == "Referência"
-    assert col_preco == "Preço"
+    assert cols_preco == ["Preço"]
 
 
 def test_extrair_linhas_planilha():
     df = ler_planilha(_planilha_exemplo(), "precos.xlsx")
-    linhas, avisos = extrair_linhas(df, "Referência", "Preço")
-    assert [(l.codigo, l.preco) for l in linhas] == [
-        ("1023", 29.90), ("2044", 89.90), ("3077", 119.90)
+    linhas, avisos = extrair_linhas(df, "Referência", ["Preço"])
+    assert [(l.codigo, _precos(l)) for l in linhas] == [
+        ("1023", [("", 29.90)]), ("2044", [("", 89.90)]), ("3077", [("", 119.90)])
     ]
+    assert linhas[0].descricao == "Body"
     assert any("9999" in a for a in avisos)  # código sem preço vira aviso
+
+
+def test_extrair_linhas_planilha_varias_colunas_de_preco():
+    df = pd.DataFrame({
+        "Ref": ["1023", "2044"],
+        "Preço 1 a 3": ["49,90", "59,90"],
+        "Preço 4 a 8": ["54,90", None],
+    })
+    linhas, _ = extrair_linhas(df, "Ref", ["Preço 1 a 3", "Preço 4 a 8"])
+    assert _precos(linhas[0]) == [("Preço 1 a 3", 49.90), ("Preço 4 a 8", 54.90)]
+    assert _precos(linhas[1]) == [("Preço 1 a 3", 59.90)]
 
 
 def test_extrair_linhas_csv():
     csv = "codigo;valor\n1023;29,90\n2044;R$ 89,90\n"
     df = ler_planilha(csv.encode(), "precos.csv")
-    linhas, _ = extrair_linhas(df, "codigo", "valor")
-    assert [(l.codigo, l.preco) for l in linhas] == [("1023", 29.90), ("2044", 89.90)]
+    linhas, _ = extrair_linhas(df, "codigo", ["valor"])
+    assert [(l.codigo, _precos(l)) for l in linhas] == [
+        ("1023", [("", 29.90)]), ("2044", [("", 89.90)])
+    ]
 
 
-def test_tabela_pdf():
+def test_tabela_pdf_simples():
     doc = fitz.open()
     page = doc.new_page()
     page.insert_text((72, 100), "1023  Body manga longa  R$ 29,90", fontsize=11)
@@ -97,8 +115,49 @@ def test_tabela_pdf():
     dados = doc.tobytes()
     doc.close()
     linhas, avisos = ler_tabela_pdf(dados)
-    assert [(l.codigo, l.preco) for l in linhas] == [("1023", 29.90), ("2044", 89.90)]
+    assert [(l.codigo, _precos(l)) for l in linhas] == [
+        ("1023", [("", 29.90)]), ("2044", [("", 89.90)])
+    ]
     assert avisos == []
+
+
+def test_tabela_pdf_com_faixas_de_tamanho():
+    """Reproduz o layout real (UP BABY): cabeçalho com faixas de tamanho,
+    "R$" separado do valor, preços alinhados por coluna e páginas de
+    continuação sem cabeçalho próprio."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((40, 80), "Referência", fontsize=9)
+    page.insert_text((145, 80), "Descrição", fontsize=9)
+    page.insert_text((255, 80), "1 a 3", fontsize=9)
+    page.insert_text((293, 80), "4 a 8", fontsize=9)
+    page.insert_text((362, 80), "10 a 12", fontsize=9)
+    page.insert_text((48, 100), "47179", fontsize=9)
+    page.insert_text((77, 100), "VESTIDO MEIA MALHA", fontsize=9)
+    for x, v in [(248, "79,90"), (285, "89,90"), (358, "99,90")]:
+        page.insert_text((x, 100), "R$", fontsize=9)
+        page.insert_text((x + 15, 100), v, fontsize=9)
+    page.insert_text((48, 112), "47180", fontsize=9)
+    page.insert_text((77, 112), "CONJUNTO BLUSA E SHORT", fontsize=9)
+    page.insert_text((248, 112), "R$", fontsize=9)
+    page.insert_text((263, 112), "59,90", fontsize=9)
+    # página de continuação, sem cabeçalho: herda as colunas
+    page2 = doc.new_page()
+    page2.insert_text((48, 100), "47181", fontsize=9)
+    page2.insert_text((77, 100), "MACAQUINHO", fontsize=9)
+    page2.insert_text((285, 100), "R$", fontsize=9)
+    page2.insert_text((300, 100), "44,90", fontsize=9)
+    dados = doc.tobytes()
+    doc.close()
+
+    linhas, avisos = ler_tabela_pdf(dados)
+    assert avisos == []
+    assert [(l.codigo, _precos(l)) for l in linhas] == [
+        ("47179", [("1 a 3", 79.90), ("4 a 8", 89.90), ("10 a 12", 99.90)]),
+        ("47180", [("1 a 3", 59.90)]),
+        ("47181", [("4 a 8", 44.90)]),
+    ]
+    assert linhas[0].descricao == "VESTIDO MEIA MALHA"
 
 
 # -------------------------------------------------------------- localização

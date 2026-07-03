@@ -293,7 +293,7 @@ else:
         except Exception as e:
             st.error(f"Não consegui ler a planilha: {e}")
             st.stop()
-        chute_cod, chute_preco = adivinhar_colunas(df_bruto)
+        chute_cod, chute_precos = adivinhar_colunas(df_bruto)
         colunas = list(df_bruto.columns)
         st.markdown("**Qual coluna é o quê?** (confira a pré-visualização)")
         col_a, col_b, col_c = st.columns([1, 1, 2])
@@ -303,16 +303,21 @@ else:
                 index=colunas.index(chute_cod) if chute_cod in colunas else 0,
             )
         with col_b:
-            col_preco = st.selectbox(
-                "Coluna do preço", colunas,
-                index=colunas.index(chute_preco) if chute_preco in colunas else 0,
+            cols_preco = st.multiselect(
+                "Coluna(s) de preço", colunas,
+                default=[c for c in chute_precos if c != col_codigo],
+                help="Se a tabela tem um preço por faixa de tamanho, "
+                "selecione todas as colunas de preço.",
             )
         with col_c:
             st.dataframe(df_bruto.head(5), use_container_width=True, hide_index=True)
-        if col_codigo == col_preco:
-            st.error("A coluna do código e a do preço não podem ser a mesma.")
+        if not cols_preco:
+            st.error("Selecione pelo menos uma coluna de preço.")
             st.stop()
-        linhas_tabela, avisos_tabela = extrair_linhas(df_bruto, col_codigo, col_preco)
+        if col_codigo in cols_preco:
+            st.error("A coluna do código não pode ser também coluna de preço.")
+            st.stop()
+        linhas_tabela, avisos_tabela = extrair_linhas(df_bruto, col_codigo, cols_preco)
 
     for aviso in avisos_tabela:
         st.warning(aviso, icon="⚠️")
@@ -340,30 +345,32 @@ else:
     for aviso in st.session_state.avisos_loc:
         st.warning(aviso, icon="⚠️")
 
-    # ----- tabela de conferência
+    # ----- tabela de conferência (uma linha por código + faixa de tamanho)
     st.subheader("2️⃣ Confira os códigos e os preços")
 
     linhas_ui = []
-    for i, linha in enumerate(linhas_tabela):
+    for linha in linhas_tabela:
         ocs = ocorrencias.get(linha.codigo, [])
-        novo = calcular_preco(linha.preco, perfil.multiplicador, perfil.arredondamento)
         alerta = ""
         if not ocs:
             alerta = "não encontrado no catálogo"
         elif len(ocs) > 1:
             alerta = f"aparece {len(ocs)}× no catálogo (todas serão precificadas)"
-        linhas_ui.append({
-            "id": i,
-            "Incluir": bool(ocs),
-            "Código": linha.codigo,
-            "Preço na tabela": linha.preco,
-            "Novo preço (R$)": novo,
-            "Páginas": ", ".join(str(o.pagina + 1) for o in ocs) or "—",
-            "Alerta": alerta,
-        })
+        for pt in linha.precos:
+            novo = calcular_preco(pt.valor, perfil.multiplicador, perfil.arredondamento)
+            linhas_ui.append({
+                "Incluir": bool(ocs),
+                "Código": linha.codigo,
+                "Tamanho": pt.rotulo or "—",
+                "Descrição": linha.descricao,
+                "Preço na tabela": pt.valor,
+                "Novo preço (R$)": novo,
+                "Páginas": ", ".join(str(o.pagina + 1) for o in ocs) or "—",
+                "Alerta": alerta,
+            })
     base = pd.DataFrame(linhas_ui)
 
-    n_nao_achados = sum(1 for l in linhas_ui if l["Alerta"].startswith("não encontrado"))
+    n_nao_achados = sum(1 for l in linhas_tabela if not ocorrencias.get(l.codigo))
     col_m1, col_m2, col_m3 = st.columns(3)
     col_m1.metric("Códigos na tabela", len(linhas_tabela))
     col_m2.metric("Encontrados no catálogo", len(linhas_tabela) - n_nao_achados)
@@ -389,9 +396,10 @@ else:
         hide_index=True,
         use_container_width=True,
         column_config={
-            "id": None,
             "Incluir": st.column_config.CheckboxColumn("Incluir"),
             "Código": st.column_config.TextColumn("Código", disabled=True),
+            "Tamanho": st.column_config.TextColumn("Tamanho", disabled=True),
+            "Descrição": st.column_config.TextColumn("Descrição", disabled=True),
             "Preço na tabela": st.column_config.NumberColumn(
                 "Preço na tabela (R$)", format="%.2f", disabled=True
             ),
@@ -405,18 +413,27 @@ else:
     )
 
     def _itens_fluxo2(df: pd.DataFrame, apenas_pagina: int | None = None) -> list[ItemCarimbo]:
-        itens = []
+        """Agrupa as linhas incluídas por código e monta uma etiqueta por
+        ocorrência no catálogo (uma linha de texto por faixa de tamanho)."""
+        por_codigo: dict[str, list[str]] = {}
         for _, row in df.iterrows():
             if not row["Incluir"]:
                 continue
-            for oc in ocorrencias.get(row["Código"], []):
+            preco_fmt = formatar_brl(float(row["Novo preço (R$)"]))
+            rotulo = str(row["Tamanho"])
+            texto = preco_fmt if rotulo in ("—", "") else f"{rotulo}: {preco_fmt}"
+            por_codigo.setdefault(row["Código"], []).append(texto)
+        itens = []
+        for codigo, linhas_etiqueta in por_codigo.items():
+            for oc in ocorrencias.get(codigo, []):
                 if apenas_pagina is not None and oc.pagina != apenas_pagina:
                     continue
                 itens.append(ItemCarimbo(
                     pagina=oc.pagina,
                     bbox=oc.bbox,
-                    novo_valor=float(row["Novo preço (R$)"]),
+                    novo_valor=0.0,
                     tinha_rs=True,
+                    linhas_etiqueta=linhas_etiqueta,
                 ))
         return itens
 

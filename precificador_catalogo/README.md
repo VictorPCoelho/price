@@ -12,9 +12,12 @@ Suporta os dois jeitos que as marcas mandam preço:
   mesma cor de fundo).
 - **Catálogo + tabela de preços separada (2 arquivos)**: o catálogo tem
   as fotos com os códigos das peças e a tabela (Excel, CSV ou PDF) traz
-  código → valor. O app localiza cada código no catálogo e carimba uma
-  etiqueta com o preço de venda ao lado. No final mostra quais códigos
-  da tabela não foram encontrados no catálogo, para conferência.
+  código → valor — inclusive com um preço por faixa de tamanho
+  ("1 a 3", "4 a 8", "RN a GG"...), padrão comum das marcas. O app
+  localiza cada código no catálogo e carimba uma etiqueta com o(s)
+  preço(s) de venda ao lado, uma linha por tamanho. No final mostra
+  quais códigos da tabela não foram encontrados no catálogo, para
+  conferência.
 
 ## Como usar
 

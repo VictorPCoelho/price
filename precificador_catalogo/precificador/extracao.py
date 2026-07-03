@@ -140,3 +140,91 @@ def extrair_precos(
 
 def _lista(nums: list[int]) -> str:
     return ", ".join(str(n) for n in nums)
+
+
+@dataclass
+class CodigoLocalizado:
+    """Uma ocorrência de um código de produto no catálogo."""
+
+    codigo: str  # código normalizado
+    pagina: int  # 0-based
+    bbox: tuple[float, float, float, float]
+
+
+def localizar_codigos(
+    caminho_ou_bytes, codigos: list[str]
+) -> tuple[dict[str, list[CodigoLocalizado]], list[str]]:
+    """Procura códigos de produto (já normalizados) nas páginas do PDF.
+
+    A comparação ignora maiúsculas/minúsculas e pontuação: o código "1023"
+    casa com "Ref: 10-23" desde que os caracteres alfanuméricos batam e o
+    trecho não faça parte de um token maior (evita achar "1023" dentro de
+    "10235").
+
+    Retorna ({codigo: [ocorrências]}, avisos). Códigos não encontrados
+    ficam com lista vazia.
+    """
+    if isinstance(caminho_ou_bytes, (bytes, bytearray)):
+        doc = fitz.open(stream=caminho_ou_bytes, filetype="pdf")
+    else:
+        doc = fitz.open(caminho_ou_bytes)
+
+    resultado: dict[str, list[CodigoLocalizado]] = {c: [] for c in codigos}
+    avisos: list[str] = []
+    paginas_sem_texto = []
+
+    for num_pagina, page in enumerate(doc):
+        linhas = _linhas_com_chars(page)
+        if sum(len(bb) for _, bb in linhas) < 5:
+            paginas_sem_texto.append(num_pagina + 1)
+            continue
+        for texto_linha, bboxes in linhas:
+            # versão normalizada da linha + mapa de volta para o índice do char
+            norm_chars = []
+            mapa = []
+            for i, ch in enumerate(texto_linha):
+                if ch.isalnum():
+                    norm_chars.append(ch.upper())
+                    mapa.append(i)
+            norm = "".join(norm_chars)
+            for codigo in codigos:
+                inicio = 0
+                while True:
+                    pos = norm.find(codigo, inicio)
+                    if pos < 0:
+                        break
+                    inicio = pos + 1
+                    fim = pos + len(codigo)
+                    # Fronteira de token: rejeita se o vizinho alfanumérico
+                    # cola no código E é do mesmo tipo (dígito com dígito,
+                    # letra com letra). Assim "1023" não casa dentro de
+                    # "10235", mas casa em "REF1023".
+                    i_ini, i_fim = mapa[pos], mapa[fim - 1]
+                    if (
+                        pos > 0
+                        and mapa[pos - 1] == i_ini - 1
+                        and norm[pos - 1].isdigit() == codigo[0].isdigit()
+                    ):
+                        continue
+                    if (
+                        fim < len(norm)
+                        and mapa[fim] == i_fim + 1
+                        and norm[fim].isdigit() == codigo[-1].isdigit()
+                    ):
+                        continue
+                    resultado[codigo].append(
+                        CodigoLocalizado(
+                            codigo=codigo,
+                            pagina=num_pagina,
+                            bbox=_bbox_do_trecho(bboxes, i_ini, i_fim + 1),
+                        )
+                    )
+    doc.close()
+
+    if paginas_sem_texto:
+        avisos.append(
+            "Páginas do catálogo sem texto legível (imagem escaneada): "
+            f"{_lista(paginas_sem_texto)}. Os códigos dessas páginas não podem "
+            "ser localizados automaticamente."
+        )
+    return resultado, avisos

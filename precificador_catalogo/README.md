@@ -2,15 +2,19 @@
 
 Automação para precificar catálogos PDF de roupas de bebê e infantil
 (compra coletiva). Em vez de abrir o PDF e escrever o preço peça a peça,
-o app:
+o app calcula o preço de venda com o multiplicador da marca, mostra tudo
+numa tabela para conferência/ajuste e gera um novo PDF já precificado.
 
-1. **Lê o PDF** do catálogo e encontra todos os preços automaticamente;
-2. **Calcula o preço de venda** com o multiplicador da marca
-   (com arredondamento bonito, ex.: sempre terminando em ,90);
-3. **Mostra tudo numa tabela para conferência** — dá para ajustar
-   qualquer item que não segue a regra, ou excluir itens;
-4. **Gera um novo PDF** com os preços de venda escritos no lugar dos
-   originais (mesma posição, mesma cor de fundo).
+Suporta os dois jeitos que as marcas mandam preço:
+
+- **Preços impressos no próprio catálogo (1 arquivo)**: o app encontra
+  os preços no PDF e escreve o preço de venda no lugar (mesma posição,
+  mesma cor de fundo).
+- **Catálogo + tabela de preços separada (2 arquivos)**: o catálogo tem
+  as fotos com os códigos das peças e a tabela (Excel, CSV ou PDF) traz
+  código → valor. O app localiza cada código no catálogo e carimba uma
+  etiqueta com o preço de venda ao lado. No final mostra quais códigos
+  da tabela não foram encontrados no catálogo, para conferência.
 
 ## Como usar
 
@@ -27,12 +31,16 @@ O app abre no navegador (http://localhost:8501).
 1. Na barra lateral, escolha a **marca** (ou crie uma nova) e confira o
    multiplicador, o arredondamento e o modo de escrita. Clique em
    **Salvar perfil da marca** para lembrar dessas escolhas na próxima vez.
-2. Envie o **PDF do catálogo**.
-3. Confira a tabela: o novo preço já vem calculado. **Edite direto na
+2. Escolha o fluxo no topo: **preços impressos no catálogo** ou
+   **catálogo + tabela separada**.
+3. Envie o **PDF do catálogo** (e a **tabela de preços**, no fluxo de
+   2 arquivos — se for planilha, confirme qual coluna é o código e qual
+   é o preço).
+4. Confira a tabela: o novo preço já vem calculado. **Edite direto na
    tabela** os itens que fogem da regra. Itens com **alerta** merecem
-   atenção (preço muito alto/baixo costuma ser erro de leitura).
-4. Veja a **pré-visualização** lado a lado (original × precificado).
-5. Clique em **Gerar PDF precificado** e baixe o arquivo.
+   atenção (preço muito alto/baixo, código não encontrado etc.).
+5. Veja a **pré-visualização** lado a lado (original × precificado).
+6. Clique em **Gerar PDF precificado** e baixe o arquivo.
 
 ## Proteções contra erro
 
@@ -44,6 +52,9 @@ O app abre no navegador (http://localhost:8501).
   símbolo, desligue a opção na barra lateral.
 - **Preços fora da faixa** (configurável por marca) são sinalizados na
   tabela.
+- **Conferência cruzada no fluxo de 2 arquivos**: códigos da tabela que
+  não existem no catálogo (e códigos repetidos com preços diferentes)
+  são listados para revisão manual.
 - **Preço de custo não vaza**: no modo "substituir", o preço original é
   removido de verdade do PDF (não apenas coberto) — copiar o texto do PDF
   final não revela o valor do catálogo.
@@ -75,8 +86,9 @@ python3 -m pytest tests/
 
 ```
 app.py                    # interface web (Streamlit)
-precificador/extracao.py  # encontra os preços e suas posições no PDF
+precificador/extracao.py  # encontra preços e códigos (com posição) no PDF
+precificador/tabela.py    # lê a tabela de códigos e preços (Excel/CSV/PDF)
 precificador/regras.py    # multiplicador, arredondamento, perfis de marca
 precificador/carimbo.py   # gera o PDF final com os novos preços
-tests/test_fluxo.py       # testes do fluxo completo
+tests/                    # testes dos dois fluxos
 ```

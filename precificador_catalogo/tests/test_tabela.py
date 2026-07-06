@@ -248,6 +248,57 @@ def test_etiquetas_nao_se_sobrepoem():
             assert not fills[i].intersects(fills[j]), (fills[i], fills[j])
 
 
+def test_linhas_da_etiqueta():
+    from precificador.regras import linhas_da_etiqueta
+
+    assert linhas_da_etiqueta("BERMUDA MOLETINHO", [("1 a 3", 119.90)]) == [
+        "BERMUDA MOLETINHO", "1 a 3: R$ 119,90"
+    ]
+    # sem rótulo de tamanho ("—") a linha é só o preço
+    assert linhas_da_etiqueta("", [("—", 59.90)]) == ["R$ 59,90"]
+    # descrição comprida é abreviada
+    linhas = linhas_da_etiqueta("CONJUNTO BATA EM MEIA MALHA E BERMUDA", [("", 99.90)])
+    assert linhas[0].endswith("…") and len(linhas[0]) <= 30
+
+
+def test_etiqueta_nao_cobre_descricao_quando_ha_espaco():
+    """Reproduz o layout dos catálogos: código com descrição logo abaixo,
+    no canto inferior da página, e foto (sem texto) acima. A etiqueta deve
+    ir para um lugar sem texto, nunca sobre a descrição."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    # canto inferior esquerdo
+    page.insert_text((40, 700), "1.264.084", fontsize=10)
+    page.insert_text((40, 714), "CONJUNTO BATA EM MEIA MALHA E BERMUDA", fontsize=8)
+    page.insert_text((40, 726), "EM MOLETINHO ECO LISTRADO", fontsize=8)
+    # canto inferior direito
+    page.insert_text((400, 700), "1.264.090", fontsize=10)
+    page.insert_text((400, 714), "VESTIDO EM COTTON", fontsize=8)
+    pdf = doc.tobytes()
+    doc.close()
+
+    ocorrencias, _ = localizar_codigos(pdf, ["1264084", "1264090"])
+    itens = [
+        ItemCarimbo(pagina=oc.pagina, bbox=oc.bbox, novo_valor=0.0,
+                    linhas_etiqueta=["BERMUDA…", "1/2/3: R$ 100,90", "4/6/8/10: R$ 119,90"])
+        for ocs in ocorrencias.values() for oc in ocs
+    ]
+    saida = carimbar(pdf, itens, modo="adicionar")
+
+    doc = fitz.open(stream=saida, filetype="pdf")
+    etiquetas = [d["rect"] for d in doc[0].get_drawings() if d.get("fill")]
+    # palavras originais (sem os textos que a própria etiqueta escreveu:
+    # filtra pelos que existiam no pdf de entrada)
+    orig = fitz.open(stream=pdf, filetype="pdf")
+    palavras = [fitz.Rect(w[:4]) for w in orig[0].get_text("words")]
+    orig.close()
+    doc.close()
+    assert len(etiquetas) == 2
+    for e in etiquetas:
+        for p in palavras:
+            assert not e.intersects(p), (e, p)
+
+
 def test_cor_da_etiqueta_personalizada():
     doc = fitz.open()
     page = doc.new_page()

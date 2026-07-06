@@ -56,6 +56,32 @@ def hex_para_rgb(cor_hex: str) -> tuple[float, float, float]:
     return tuple(int(cor[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
 
+def linhas_da_etiqueta(
+    descricao: str,
+    precos: list[tuple[str, float]],
+    max_descricao: int = 30,
+) -> list[str]:
+    """Monta as linhas de texto da etiqueta de uma peça.
+
+    Com mais de um código por foto, a descrição diz o que é cada peça
+    (ex.: "BERMUDA MOLETINHO" × "CAMISETA MALHA"). ``precos`` é a lista
+    de (rótulo do tamanho, valor de venda).
+    """
+    linhas: list[str] = []
+    desc = (descricao or "").strip()
+    if desc:
+        if len(desc) > max_descricao:
+            desc = desc[:max_descricao - 1].rstrip() + "…"
+        linhas.append(desc)
+    for rotulo, valor in precos:
+        preco_fmt = formatar_brl(valor)
+        if rotulo and rotulo != "—":
+            linhas.append(f"{rotulo}: {preco_fmt}")
+        else:
+            linhas.append(preco_fmt)
+    return linhas
+
+
 @dataclass
 class PerfilMarca:
     """Configuração de precificação de uma marca de catálogo."""
@@ -68,6 +94,7 @@ class PerfilMarca:
     valor_minimo: float = 1.0  # abaixo disso o item é sinalizado para revisão
     valor_maximo: float = 2000.0  # acima disso o item é sinalizado para revisão
     cor_etiqueta: str = "#3D3D45"  # cor de fundo da etiqueta (grafite neutro)
+    descricao_na_etiqueta: bool = True  # 1ª linha da etiqueta = descrição da peça
     usar_logo: bool = True  # inserir o logo salvo da marca ao gerar o PDF
     logo_posicao: str = "inferior-direito"  # chave de POSICOES_LOGO
     logo_largura: int = 20  # largura do logo em % da largura da página

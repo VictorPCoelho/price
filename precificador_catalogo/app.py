@@ -31,6 +31,7 @@ from precificador.regras import (
     calcular_preco,
     formatar_brl,
     hex_para_rgb,
+    linhas_da_etiqueta,
 )
 from precificador.tabela import (
     adivinhar_colunas,
@@ -82,6 +83,13 @@ perfil.exigir_rs = st.sidebar.toggle(
     value=perfil.exigir_rs,
     help="Mais seguro. Desligue apenas se o catálogo mostra os preços sem o "
     "símbolo R$ (aí números como 99,90 também serão detectados).",
+)
+perfil.descricao_na_etiqueta = st.sidebar.toggle(
+    "Descrição da peça na etiqueta",
+    value=perfil.descricao_na_etiqueta,
+    help="No fluxo com tabela separada, escreve o nome da peça na primeira "
+    "linha da etiqueta — essencial quando há mais de um código na mesma "
+    "foto (ex.: bermuda e camiseta).",
 )
 perfil.cor_etiqueta = st.sidebar.color_picker(
     "Cor da etiqueta de preço", value=perfil.cor_etiqueta,
@@ -483,17 +491,22 @@ else:
 
     def _itens_fluxo2(df: pd.DataFrame, apenas_pagina: int | None = None) -> list[ItemCarimbo]:
         """Agrupa as linhas incluídas por código e monta uma etiqueta por
-        ocorrência no catálogo (uma linha de texto por faixa de tamanho)."""
-        por_codigo: dict[str, list[str]] = {}
+        ocorrência no catálogo: descrição da peça (opcional) + uma linha
+        de preço por faixa de tamanho."""
+        por_codigo: dict[str, dict] = {}
         for _, row in df.iterrows():
             if not row["Incluir"]:
                 continue
-            preco_fmt = formatar_brl(float(row["Novo preço (R$)"]))
-            rotulo = str(row["Tamanho"])
-            texto = preco_fmt if rotulo in ("—", "") else f"{rotulo}: {preco_fmt}"
-            por_codigo.setdefault(row["Código"], []).append(texto)
+            info = por_codigo.setdefault(
+                row["Código"], {"descricao": str(row["Descrição"] or ""), "precos": []}
+            )
+            info["precos"].append((str(row["Tamanho"]), float(row["Novo preço (R$)"])))
         itens = []
-        for codigo, linhas_etiqueta in por_codigo.items():
+        for codigo, info in por_codigo.items():
+            linhas_etiqueta = linhas_da_etiqueta(
+                info["descricao"] if perfil.descricao_na_etiqueta else "",
+                info["precos"],
+            )
             for oc in ocorrencias.get(codigo, []):
                 if apenas_pagina is not None and oc.pagina != apenas_pagina:
                     continue

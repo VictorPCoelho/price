@@ -172,36 +172,57 @@ def _adicionar(
     h = altura_linha * len(linhas)
 
     afasta = 4  # maior que a folga de 2pt da checagem de colisão
+    # candidatas em ordem de preferência: colada no código primeiro
+    # (abaixo, direita, acima, esquerda), depois varrendo mais longe
     candidatas = [
         fitz.Rect(x0, y1 + afasta, x0 + w, y1 + afasta + h),      # abaixo
         fitz.Rect(x1 + afasta, y0, x1 + afasta + w, y0 + h),      # à direita
         fitz.Rect(x0, y0 - afasta - h, x0 + w, y0 - afasta),      # acima
         fitz.Rect(x0 - afasta - w, y0, x0 - afasta, y0 + h),      # à esquerda
     ]
-    # desce em passos, para pilhas de códigos próximos
-    for passo in range(1, 6):
-        desloc = (h + 2) * passo
-        candidatas.append(
-            fitz.Rect(x0, y1 + afasta + desloc, x0 + w, y1 + afasta + desloc + h)
-        )
+    deslocs_x = [0, w / 2 + 2, -(w / 2 + 2), w + 4, -(w + 4)]
+    for passo in range(1, 7):
+        dy = (h + 2) * passo
+        for dx in deslocs_x:
+            candidatas.append(fitz.Rect(
+                x0 + dx, y1 + afasta + dy, x0 + dx + w, y1 + afasta + dy + h
+            ))
+            candidatas.append(fitz.Rect(
+                x0 + dx, y0 - afasta - dy - h, x0 + dx + w, y0 - afasta - dy
+            ))
 
     # o próprio código não é obstáculo para a etiqueta dele
     propria = fitz.Rect(bbox)
+    duros = [o for o in obstaculos if o != propria]
+    textos = evitar_se_der or []
 
-    def _livre(r: fitz.Rect, extras: list[fitz.Rect]) -> bool:
-        if not (page.rect.x0 <= r.x0 and r.x1 <= page.rect.x1
-                and page.rect.y0 <= r.y0 and r.y1 <= page.rect.y1):
-            return False
+    def _cabe_na_pagina(r: fitz.Rect) -> bool:
+        return (page.rect.x0 <= r.x0 and r.x1 <= page.rect.x1
+                and page.rect.y0 <= r.y0 and r.y1 <= page.rect.y1)
+
+    def _bate_nos_duros(r: fitz.Rect) -> bool:
         folga = fitz.Rect(r.x0 - 2, r.y0 - 2, r.x1 + 2, r.y1 + 2)
-        return not any(
-            folga.intersects(o) for o in obstaculos if o != propria
-        ) and not any(folga.intersects(o) for o in extras)
+        return any(folga.intersects(o) for o in duros)
 
-    # 1ª passada: sem cobrir nenhum texto da página; 2ª: só os obrigatórios
-    etiqueta = next(
-        (r for r in candidatas if _livre(r, evitar_se_der or [])),
-        next((r for r in candidatas if _livre(r, [])), candidatas[0]),
-    )
+    def _area_de_texto_coberta(r: fitz.Rect) -> float:
+        folga = fitz.Rect(r.x0 - 2, r.y0 - 2, r.x1 + 2, r.y1 + 2)
+        return sum((folga & o).get_area() for o in textos if folga.intersects(o))
+
+    # escolhe a primeira posição que não cobre texto nenhum; se não houver,
+    # a que cobre a MENOR área de texto (nunca outra etiqueta ou código)
+    etiqueta = None
+    menor = None
+    for r in candidatas:
+        if not _cabe_na_pagina(r) or _bate_nos_duros(r):
+            continue
+        area = _area_de_texto_coberta(r)
+        if area == 0:
+            etiqueta = r
+            break
+        if menor is None or area < menor[0]:
+            menor = (area, r)
+    if etiqueta is None:
+        etiqueta = menor[1] if menor else candidatas[0]
 
     page.draw_rect(etiqueta, color=None, fill=cor, radius=0.2 / len(linhas))
     cor_texto = _cor_do_texto(cor)

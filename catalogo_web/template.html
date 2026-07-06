@@ -50,6 +50,15 @@
   .opcao-tam .tam { font-weight: 600; }
   .opcao-tam .preco { font-weight: 700; }
 
+  .rotulo-passo { font-size: .85rem; font-weight: 700; color: #55555c; margin: 14px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip-tam { min-width: 52px; padding: 11px 14px; border: 1.6px solid #e2e2e6; border-radius: 12px;
+              background: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; text-align: center; }
+  .chip-tam.escolhido { border-color: var(--tema); background: var(--tema); color: #fff; }
+  .campo-livre { width: 100%; padding: 13px 14px; border: 1.6px solid #e2e2e6; border-radius: 12px;
+                 font-size: .95rem; }
+  .campo-livre:focus { outline: none; border-color: var(--tema); }
+
   .botao { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
            padding: 15px; border: none; border-radius: 14px; font-size: 1rem; font-weight: 700;
            cursor: pointer; margin-top: 10px; }
@@ -88,6 +97,12 @@
   <h2 id="peca-nome"></h2>
   <div class="ref" id="peca-ref"></div>
   <div id="peca-tamanhos"></div>
+  <div id="passo-tamanho" style="display:none">
+    <div class="rotulo-passo" id="titulo-tamanho">Qual tamanho?</div>
+    <div class="chips" id="chips-tam"></div>
+    <input class="campo-livre" id="tam-livre" style="display:none"
+           placeholder="Digite o tamanho (ex.: 6)">
+  </div>
   <button class="botao principal" id="btn-adicionar" disabled>Adicionar à sacolinha</button>
 </div>
 
@@ -130,37 +145,108 @@ DADOS.paginas.forEach((src, i) => {
   cont.appendChild(div);
 });
 
+/* ------------------------------------------------ tamanhos de uma grade */
+const ESCADA_LETRAS = ["PR", "RN", "P", "M", "G", "GG"];
+
+/* "4/6/8/10" → ["4","6","8","10"]; "1 a 3" → ["1","2","3"];
+   "RN a GG" → ["RN","P","M","G","GG"]; "ÚNICO"/vazio → [];
+   grade não reconhecida → null (campo livre para digitar) */
+function tamanhosDaGrade(grade) {
+  const g = (grade || "").trim();
+  if (!g || /^[uú]nico$/i.test(g)) return [];
+  const mNum = g.match(/^(\d+)\s*a\s*(\d+)$/i);
+  if (mNum) {
+    const a = +mNum[1], b = +mNum[2];
+    if (b > a && b - a <= 20)
+      return Array.from({length: b - a + 1}, (_, i) => String(a + i));
+  }
+  const mLet = g.toUpperCase().match(/^([A-Z]+)\s*A\s*([A-Z]+)$/);
+  if (mLet) {
+    const i = ESCADA_LETRAS.indexOf(mLet[1]), j = ESCADA_LETRAS.indexOf(mLet[2]);
+    if (i >= 0 && j > i) return ESCADA_LETRAS.slice(i, j + 1);
+  }
+  if (g.includes("/") && !/\sa\s/i.test(g))
+    return g.split("/").map(s => s.trim()).filter(Boolean);
+  return null;
+}
+
 /* ------------------------------------------------ painel da peça */
-let pecaAtual = null, tamEscolhido = null;
+let pecaAtual = null, gradeEscolhida = null, tamanhoEscolhido = null;
+
+function atualizarBotaoAdicionar() {
+  const livre = $("tam-livre");
+  const digitado = livre.style.display !== "none" ? livre.value.trim() : "";
+  $("btn-adicionar").disabled = !gradeEscolhida ||
+    ($("passo-tamanho").dataset.obrigatorio === "1" && !tamanhoEscolhido && !digitado);
+}
+
+function montarPassoTamanho() {
+  const passo = $("passo-tamanho"), chips = $("chips-tam"), livre = $("tam-livre");
+  tamanhoEscolhido = null;
+  chips.innerHTML = ""; livre.value = ""; livre.style.display = "none";
+  const tams = tamanhosDaGrade(gradeEscolhida ? gradeEscolhida.tamanho : "");
+  if (tams === null) {                       // grade não reconhecida: digita
+    passo.style.display = "block";
+    passo.dataset.obrigatorio = "1";
+    $("titulo-tamanho").textContent = "Qual tamanho? (grade " + gradeEscolhida.tamanho + ")";
+    livre.style.display = "block";
+  } else if (tams.length) {                  // grade com opções: vira botões
+    passo.style.display = "block";
+    passo.dataset.obrigatorio = "1";
+    $("titulo-tamanho").textContent = "Qual tamanho?";
+    tams.forEach(t => {
+      const c = document.createElement("button");
+      c.className = "chip-tam";
+      c.textContent = t;
+      c.onclick = () => {
+        tamanhoEscolhido = t;
+        [...chips.children].forEach(x => x.classList.remove("escolhido"));
+        c.classList.add("escolhido");
+        atualizarBotaoAdicionar();
+      };
+      chips.appendChild(c);
+    });
+  } else {                                   // tamanho único: nada a perguntar
+    passo.style.display = "none";
+    passo.dataset.obrigatorio = "0";
+  }
+  atualizarBotaoAdicionar();
+}
+
+$("tam-livre").oninput = atualizarBotaoAdicionar;
 
 function abrirPeca(p) {
-  pecaAtual = p; tamEscolhido = null;
+  pecaAtual = p; gradeEscolhida = null; tamanhoEscolhido = null;
   $("peca-nome").textContent = p.descricao || "Peça " + p.codigo;
   $("peca-ref").textContent = "Ref. " + p.codigo;
   const box = $("peca-tamanhos");
   box.innerHTML = "";
-  p.precos.forEach((pr, idx) => {
+  p.precos.forEach(pr => {
     const b = document.createElement("button");
     b.className = "opcao-tam";
-    b.innerHTML = `<span class="tam">${pr.tamanho ? "Tam " + pr.tamanho : "Tamanho único"}</span>` +
+    b.innerHTML = `<span class="tam">${pr.tamanho ? "Grade " + pr.tamanho : "Tamanho único"}</span>` +
                   `<span class="preco">${brl(pr.valor)}</span>`;
     b.onclick = () => {
-      tamEscolhido = pr;
+      gradeEscolhida = pr;
       [...box.children].forEach(c => c.classList.remove("escolhido"));
       b.classList.add("escolhido");
-      $("btn-adicionar").disabled = false;
+      montarPassoTamanho();
     };
     box.appendChild(b);
     if (p.precos.length === 1) b.click();
   });
-  $("btn-adicionar").disabled = !tamEscolhido;
+  montarPassoTamanho();
   abrirPainel("painel-peca");
 }
 
 $("btn-adicionar").onclick = () => {
-  if (!pecaAtual || !tamEscolhido) return;
+  if (!pecaAtual || !gradeEscolhida) return;
+  const livre = $("tam-livre");
+  const tamanho = tamanhoEscolhido ||
+    (livre.style.display !== "none" ? livre.value.trim() : "");
   sacola.push({ codigo: pecaAtual.codigo, descricao: pecaAtual.descricao,
-                tamanho: tamEscolhido.tamanho, valor: tamEscolhido.valor });
+                grade: gradeEscolhida.tamanho, tamanho: tamanho,
+                valor: gradeEscolhida.valor });
   salvarSacola();
   fecharPaineis();
 };
@@ -189,8 +275,11 @@ function desenharSacola() {
   sacola.forEach((it, i) => {
     const d = document.createElement("div");
     d.className = "item-sacola";
+    const detalhes = ["Ref. " + it.codigo];
+    if (it.tamanho) detalhes.push("Tam " + it.tamanho);
+    if (it.grade && it.grade !== it.tamanho) detalhes.push("grade " + it.grade);
     d.innerHTML = `<div class="info"><div class="nome">${it.descricao || "Ref. " + it.codigo}</div>` +
-                  `<div class="det">Ref. ${it.codigo}${it.tamanho ? " · Tam " + it.tamanho : ""}</div></div>` +
+                  `<div class="det">${detalhes.join(" · ")}</div></div>` +
                   `<div class="val">${brl(it.valor)}</div>`;
     const x = document.createElement("button");
     x.className = "tirar"; x.textContent = "✕"; x.setAttribute("aria-label", "Remover");
@@ -205,9 +294,13 @@ function desenharSacola() {
 }
 
 $("btn-enviar").onclick = () => {
-  const linhas = sacola.map(it =>
-    `- Ref. ${it.codigo}${it.tamanho ? " (Tam " + it.tamanho + ")" : ""}` +
-    `${it.descricao ? " - " + it.descricao : ""}: ${brl(it.valor)}`);
+  const linhas = sacola.map(it => {
+    const partes = [];
+    if (it.tamanho) partes.push("Tam " + it.tamanho);
+    if (it.grade && it.grade !== it.tamanho) partes.push("grade " + it.grade);
+    return `- Ref. ${it.codigo}${partes.length ? " (" + partes.join(", ") + ")" : ""}` +
+           `${it.descricao ? " - " + it.descricao : ""}: ${brl(it.valor)}`;
+  });
   const total = sacola.reduce((s, it) => s + it.valor, 0);
   const msg = `Oi! Quero fazer um pedido do catálogo *${DADOS.titulo}*:\n\n` +
               linhas.join("\n") + `\n\n*Total: ${brl(total)}*`;

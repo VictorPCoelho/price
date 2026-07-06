@@ -10,10 +10,14 @@ Para rodar:  streamlit run app.py
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
+# raiz do repositório, para importar o gerador do catálogo web (Projeto 2)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from precificador.carimbo import (
     POSICOES_LOGO,
@@ -21,7 +25,13 @@ from precificador.carimbo import (
     carimbar,
     imagem_pagina,
     inserir_logo,
+    paginas_como_jpg,
 )
+
+try:
+    from catalogo_web.gerador import gerar_site, limpar_whatsapp
+except ImportError:  # Projeto 2 ausente: o Projeto 1 segue funcionando
+    gerar_site = None
 from precificador.extracao import extrair_precos, localizar_codigos
 from precificador.regras import (
     ARREDONDAMENTOS,
@@ -565,3 +575,86 @@ else:
 
     if "resultado2" in st.session_state:
         _botao_download(st.session_state.resultado2, st.session_state.resultado2_nome)
+
+    # ----- catálogo web interativo (Projeto 2)
+    if gerar_site is not None:
+        st.subheader("5️⃣ Catálogo web interativo (opcional)")
+        st.caption(
+            "Gera uma página web do catálogo: o cliente toca na peça, monta a "
+            "sacolinha e envia o pedido pronto pelo seu WhatsApp. Publique o "
+            "arquivo gerado no Netlify (arrastar e soltar) e mande o link nos grupos."
+        )
+        col_w1, col_w2 = st.columns(2)
+        with col_w1:
+            perfil.whatsapp = st.text_input(
+                "Seu WhatsApp (com DDD)",
+                value=perfil.whatsapp,
+                placeholder="31 99999-8888",
+                help="Número que vai receber os pedidos. Salve o perfil da "
+                "marca para não digitar de novo.",
+            )
+        with col_w2:
+            titulo_catalogo = st.text_input(
+                "Nome do catálogo", value=Path(arq_catalogo.name).stem.replace("_", " ")
+            )
+
+        if st.button("🌐 Gerar catálogo web"):
+            if not limpar_whatsapp(perfil.whatsapp):
+                st.error("Informe um WhatsApp válido, com DDD (ex.: 31 99999-8888).")
+            else:
+                with st.spinner("Montando o catálogo web..."):
+                    # páginas com os preços já carimbados (e logo, se houver)
+                    pdf_final = _aplicar_logo(carimbar(
+                        pdf_bytes, _itens_fluxo2(tabela_ui),
+                        modo="adicionar", cor_etiqueta=COR_ETIQUETA_RGB,
+                    ))
+                    paginas = paginas_como_jpg(pdf_final)
+
+                    itens_web = []
+                    df_inc = tabela_ui[tabela_ui["Incluir"]]
+                    for codigo, grupo in df_inc.groupby("Código", sort=False):
+                        precos_web = [
+                            {"tamanho": ("" if str(r["Tamanho"]) == "—" else str(r["Tamanho"])),
+                             "valor": float(r["Novo preço (R$)"])}
+                            for _, r in grupo.iterrows()
+                        ]
+                        descricao = str(grupo.iloc[0]["Descrição"] or "")
+                        por_pagina: dict[int, list] = {}
+                        for oc in ocorrencias.get(codigo, []):
+                            x0, y0, x1, y1 = oc.bbox
+                            _jpg, pw, ph = paginas[oc.pagina]
+                            por_pagina.setdefault(oc.pagina, []).append(
+                                [round(((x0 + x1) / 2) / pw, 4),
+                                 round(((y0 + y1) / 2) / ph, 4)]
+                            )
+                        for pagina, pontos in por_pagina.items():
+                            itens_web.append({
+                                "codigo": codigo,
+                                "descricao": descricao,
+                                "pagina": pagina,
+                                "pontos": pontos,
+                                "precos": precos_web,
+                            })
+                    st.session_state.site_zip = gerar_site(
+                        titulo=titulo_catalogo,
+                        whatsapp=perfil.whatsapp,
+                        paginas_jpg=[p[0] for p in paginas],
+                        itens=itens_web,
+                        cor_tema=perfil.cor_etiqueta,
+                    )
+                    st.session_state.site_zip_nome = (
+                        Path(arq_catalogo.name).stem + "_catalogo_web.zip"
+                    )
+                st.success(
+                    "Catálogo web pronto! Baixe o zip, descompacte e arraste a "
+                    "pasta inteira em https://app.netlify.com/drop — o link "
+                    "gerado é o que você manda para os clientes."
+                )
+
+        if "site_zip" in st.session_state:
+            st.download_button(
+                "⬇️ Baixar catálogo web (.zip)",
+                data=st.session_state.site_zip,
+                file_name=st.session_state.site_zip_nome,
+                mime="application/zip",
+            )

@@ -288,6 +288,24 @@ def inserir_logo(
     return saida
 
 
+def paginas_como_jpg(
+    pdf_bytes: bytes, zoom: float = 1.6, qualidade: int = 80
+) -> list[tuple[bytes, float, float]]:
+    """Renderiza todas as páginas como JPEG (para o catálogo web).
+
+    Retorna, por página: (bytes do JPEG, largura, altura) — dimensões em
+    pontos do PDF, para converter posições em frações da página.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    saida = []
+    for page in doc:
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), colorspace=fitz.csRGB)
+        saida.append((pix.tobytes("jpg", jpg_quality=qualidade),
+                      page.rect.width, page.rect.height))
+    doc.close()
+    return saida
+
+
 def imagem_pagina(pdf_bytes: bytes, pagina: int, destaques: list[tuple] | None = None,
                   zoom: float = 2.0) -> bytes:
     """Renderiza uma página como PNG, com retângulos de destaque opcionais."""

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>__TITULO__</title>
+<style>
+  :root { --tema: __COR_TEMA__; --verde-zap: #25D366; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #f5f4f2; color: #2b2b2e; }
+
+  header { position: sticky; top: 0; z-index: 20; background: var(--tema); color: #fff;
+           display: flex; align-items: center; justify-content: space-between;
+           padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+  header h1 { font-size: 1.02rem; font-weight: 600; line-height: 1.2; }
+  header .dica { font-size: .72rem; opacity: .85; font-weight: 400; }
+  #abrir-sacola { position: relative; background: rgba(255,255,255,.16); border: none; color: #fff;
+                  font-size: 1.35rem; padding: 8px 12px; border-radius: 12px; cursor: pointer; }
+  #contador { position: absolute; top: -6px; right: -6px; background: #ff5252; color: #fff;
+              font-size: .68rem; font-weight: 700; min-width: 19px; height: 19px; border-radius: 10px;
+              display: none; align-items: center; justify-content: center; padding: 0 4px; }
+
+  main { max-width: 720px; margin: 0 auto; padding-bottom: 90px; }
+  .pagina { position: relative; margin: 10px 8px; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 1px 6px rgba(0,0,0,.12); background: #fff; }
+  .pagina img { width: 100%; display: block; }
+
+  .ponto { position: absolute; transform: translate(-50%, -50%); width: 34px; height: 34px;
+           border-radius: 50%; background: var(--tema); color: #fff; border: 2px solid #fff;
+           font-size: 1.25rem; line-height: 1; font-weight: 700; cursor: pointer;
+           box-shadow: 0 2px 8px rgba(0,0,0,.35); animation: pulsa 2.2s infinite; }
+  @keyframes pulsa { 0%,100% { box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+                     50% { box-shadow: 0 2px 8px rgba(0,0,0,.35), 0 0 0 9px rgba(0,0,0,.07); } }
+
+  .veu { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 30; display: none; }
+  .veu.aberto { display: block; }
+  .painel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; background: #fff;
+            border-radius: 18px 18px 0 0; padding: 18px 18px 26px; max-height: 82vh; overflow-y: auto;
+            transform: translateY(105%); transition: transform .22s ease-out; box-shadow: 0 -4px 24px rgba(0,0,0,.25); }
+  .painel.aberto { transform: translateY(0); }
+  .painel h2 { font-size: 1.02rem; margin-bottom: 2px; }
+  .painel .ref { color: #8a8a90; font-size: .8rem; margin-bottom: 14px; }
+  .alca { width: 42px; height: 4px; border-radius: 2px; background: #d9d9de; margin: 0 auto 14px; }
+
+  .opcao-tam { display: flex; align-items: center; justify-content: space-between; width: 100%;
+               padding: 13px 14px; margin-bottom: 8px; border: 1.6px solid #e2e2e6; border-radius: 12px;
+               background: #fff; font-size: .95rem; cursor: pointer; }
+  .opcao-tam.escolhido { border-color: var(--tema); background: color-mix(in srgb, var(--tema) 7%, #fff); }
+  .opcao-tam .tam { font-weight: 600; }
+  .opcao-tam .preco { font-weight: 700; }
+
+  .botao { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+           padding: 15px; border: none; border-radius: 14px; font-size: 1rem; font-weight: 700;
+           cursor: pointer; margin-top: 10px; }
+  .botao.principal { background: var(--tema); color: #fff; }
+  .botao.zap { background: var(--verde-zap); color: #fff; }
+  .botao:disabled { opacity: .45; cursor: default; }
+
+  .item-sacola { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid #ececef; }
+  .item-sacola .info { flex: 1; }
+  .item-sacola .nome { font-size: .9rem; font-weight: 600; }
+  .item-sacola .det { font-size: .78rem; color: #8a8a90; }
+  .item-sacola .val { font-weight: 700; font-size: .9rem; white-space: nowrap; }
+  .item-sacola .tirar { background: none; border: none; color: #c33; font-size: 1.25rem; cursor: pointer; padding: 4px 6px; }
+  .total-linha { display: flex; justify-content: space-between; font-size: 1.05rem; font-weight: 800; padding: 14px 0 4px; }
+  .vazia { text-align: center; color: #8a8a90; padding: 26px 0 14px; font-size: .92rem; }
+
+  footer { text-align: center; color: #a5a5ab; font-size: .75rem; padding: 18px 0 26px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>__TITULO__</h1>
+    <div class="dica">Toque no ➕ da peça que você gostou</div>
+  </div>
+  <button id="abrir-sacola" aria-label="Abrir sacolinha">🛍️<span id="contador"></span></button>
+</header>
+
+<main id="paginas"></main>
+<footer>Catálogo digital · pedidos pelo WhatsApp</footer>
+
+<div class="veu" id="veu"></div>
+
+<div class="painel" id="painel-peca">
+  <div class="alca"></div>
+  <h2 id="peca-nome"></h2>
+  <div class="ref" id="peca-ref"></div>
+  <div id="peca-tamanhos"></div>
+  <button class="botao principal" id="btn-adicionar" disabled>Adicionar à sacolinha</button>
+</div>
+
+<div class="painel" id="painel-sacola">
+  <div class="alca"></div>
+  <h2>🛍️ Sua sacolinha</h2>
+  <div id="sacola-itens"></div>
+  <div class="total-linha" id="linha-total" style="display:none"><span>Total</span><span id="total"></span></div>
+  <button class="botao zap" id="btn-enviar" style="display:none">Enviar pedido pelo WhatsApp</button>
+</div>
+
+<script>
+const DADOS = __DADOS__;
+
+const brl = v => "R$ " + v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+const $ = id => document.getElementById(id);
+
+/* ------------------------------------------------ monta as páginas */
+const cont = $("paginas");
+DADOS.paginas.forEach((src, i) => {
+  const div = document.createElement("div");
+  div.className = "pagina";
+  const img = document.createElement("img");
+  img.src = src;
+  img.loading = "lazy";
+  img.alt = "Página " + (i + 1);
+  div.appendChild(img);
+  DADOS.itens.filter(p => p.pagina === i).forEach(p => {
+    (p.pontos || []).forEach(pt => {
+      const b = document.createElement("button");
+      b.className = "ponto";
+      b.textContent = "+";
+      b.style.left = (pt[0] * 100) + "%";
+      b.style.top = (pt[1] * 100) + "%";
+      b.setAttribute("aria-label", "Ver " + (p.descricao || p.codigo));
+      b.onclick = () => abrirPeca(p);
+      div.appendChild(b);
+    });
+  });
+  cont.appendChild(div);
+});
+
+/* ------------------------------------------------ painel da peça */
+let pecaAtual = null, tamEscolhido = null;
+
+function abrirPeca(p) {
+  pecaAtual = p; tamEscolhido = null;
+  $("peca-nome").textContent = p.descricao || "Peça " + p.codigo;
+  $("peca-ref").textContent = "Ref. " + p.codigo;
+  const box = $("peca-tamanhos");
+  box.innerHTML = "";
+  p.precos.forEach((pr, idx) => {
+    const b = document.createElement("button");
+    b.className = "opcao-tam";
+    b.innerHTML = `<span class="tam">${pr.tamanho ? "Tam " + pr.tamanho : "Tamanho único"}</span>` +
+                  `<span class="preco">${brl(pr.valor)}</span>`;
+    b.onclick = () => {
+      tamEscolhido = pr;
+      [...box.children].forEach(c => c.classList.remove("escolhido"));
+      b.classList.add("escolhido");
+      $("btn-adicionar").disabled = false;
+    };
+    box.appendChild(b);
+    if (p.precos.length === 1) b.click();
+  });
+  $("btn-adicionar").disabled = !tamEscolhido;
+  abrirPainel("painel-peca");
+}
+
+$("btn-adicionar").onclick = () => {
+  if (!pecaAtual || !tamEscolhido) return;
+  sacola.push({ codigo: pecaAtual.codigo, descricao: pecaAtual.descricao,
+                tamanho: tamEscolhido.tamanho, valor: tamEscolhido.valor });
+  salvarSacola();
+  fecharPaineis();
+};
+
+/* ------------------------------------------------ sacolinha */
+let sacola = [];
+try { sacola = JSON.parse(localStorage.getItem("sacola-" + DADOS.id) || "[]"); } catch (e) {}
+
+function salvarSacola() {
+  localStorage.setItem("sacola-" + DADOS.id, JSON.stringify(sacola));
+  atualizarContador();
+}
+
+function atualizarContador() {
+  const c = $("contador");
+  c.style.display = sacola.length ? "flex" : "none";
+  c.textContent = sacola.length;
+}
+
+function desenharSacola() {
+  const box = $("sacola-itens");
+  box.innerHTML = "";
+  if (!sacola.length) {
+    box.innerHTML = '<div class="vazia">Sua sacolinha está vazia.<br>Toque no ➕ das peças para adicionar.</div>';
+  }
+  sacola.forEach((it, i) => {
+    const d = document.createElement("div");
+    d.className = "item-sacola";
+    d.innerHTML = `<div class="info"><div class="nome">${it.descricao || "Ref. " + it.codigo}</div>` +
+                  `<div class="det">Ref. ${it.codigo}${it.tamanho ? " · Tam " + it.tamanho : ""}</div></div>` +
+                  `<div class="val">${brl(it.valor)}</div>`;
+    const x = document.createElement("button");
+    x.className = "tirar"; x.textContent = "✕"; x.setAttribute("aria-label", "Remover");
+    x.onclick = () => { sacola.splice(i, 1); salvarSacola(); desenharSacola(); };
+    d.appendChild(x);
+    box.appendChild(d);
+  });
+  const total = sacola.reduce((s, it) => s + it.valor, 0);
+  $("linha-total").style.display = sacola.length ? "flex" : "none";
+  $("btn-enviar").style.display = sacola.length ? "flex" : "none";
+  $("total").textContent = brl(total);
+}
+
+$("btn-enviar").onclick = () => {
+  const linhas = sacola.map(it =>
+    `- Ref. ${it.codigo}${it.tamanho ? " (Tam " + it.tamanho + ")" : ""}` +
+    `${it.descricao ? " - " + it.descricao : ""}: ${brl(it.valor)}`);
+  const total = sacola.reduce((s, it) => s + it.valor, 0);
+  const msg = `Oi! Quero fazer um pedido do catálogo *${DADOS.titulo}*:\n\n` +
+              linhas.join("\n") + `\n\n*Total: ${brl(total)}*`;
+  window.open("https://wa.me/" + DADOS.whatsapp + "?text=" + encodeURIComponent(msg), "_blank");
+};
+
+/* ------------------------------------------------ painéis */
+function abrirPainel(id) {
+  $("veu").classList.add("aberto");
+  $(id).classList.add("aberto");
+}
+function fecharPaineis() {
+  $("veu").classList.remove("aberto");
+  document.querySelectorAll(".painel").forEach(p => p.classList.remove("aberto"));
+}
+$("veu").onclick = fecharPaineis;
+$("abrir-sacola").onclick = () => { desenharSacola(); abrirPainel("painel-sacola"); };
+
+atualizarContador();
+</script>
+</body>
+</html>

@@ -17,20 +17,23 @@ blocos lado a lado).
   etiqueta, logo). Logo salvo em `logos/` (ambos fora do git).
 - Testes: `python3 -m pytest precificador_catalogo/tests/`.
 
-## Projeto 2 — catálogo web interativo (upgrade, a iniciar)
+## Projeto 2 — `catalogo_web/` (catálogo web interativo, funcional)
 
 Página web gerada a partir das precificações do Projeto 1: o cliente
-navega no catálogo, toca na peça que gostou, monta uma "sacolinha" e envia
-o pedido pronto pelo WhatsApp da vendedora (link `wa.me` com refs,
-tamanhos, preços e total). Corresponde à "Opção B" do brainstorm feito na
-sessão de criação.
+navega no catálogo, toca no ➕ da peça, escolhe o tamanho, monta a
+"sacolinha" e envia o pedido pronto pelo WhatsApp da vendedora (link
+`wa.me` com refs, tamanhos, preços e total). É a "Opção B" do brainstorm.
 
-- Diretório previsto: `catalogo_web/` (separado do Projeto 1).
-- Insumo: dados que o Projeto 1 já produz (código, página, posição/bbox,
-  descrição, preços por tamanho, imagens das páginas).
-- Hospedagem alvo: estática e gratuita (GitHub Pages/Netlify), link não
-  listado.
+- `catalogo_web/gerador.py` monta um zip (index.html autocontido +
+  paginas/*.jpg) a partir dos dados do Projeto 1; `template.html` é a
+  página (vanilla JS, mobile-first, sem dependências externas).
+- Integração: seção "5️⃣ Catálogo web interativo" no fluxo 2 do app do
+  Projeto 1 (import opcional — se `catalogo_web/` faltar, o app segue).
+- Publicação: usuária arrasta a pasta descompactada em
+  https://app.netlify.com/drop e manda o link nos grupos.
+- `noindex` + link não listado; sacolinha em localStorage.
 - Nunca expor o preço de custo do catálogo — somente o preço de venda.
+- Testes: `python3 -m pytest catalogo_web/tests/`.
 
 ## Observações gerais
 

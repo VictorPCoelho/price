@@ -99,6 +99,7 @@ class PerfilMarca:
     logo_posicao: str = "inferior-direito"  # chave de POSICOES_LOGO
     logo_largura: int = 20  # largura do logo em % da largura da página
     logo_todas_paginas: bool = False  # False = só na primeira página
+    whatsapp: str = ""  # número que recebe os pedidos do catálogo web
 
 
 class RepositorioPerfis:

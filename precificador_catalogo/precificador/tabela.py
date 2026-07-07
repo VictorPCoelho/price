@@ -170,7 +170,8 @@ def _agrupar_em_linhas(words: list) -> list[list]:
     return linhas
 
 
-_PREFIXOS_CODIGO = ("referê", "refere", "ref.", "cod", "cód")
+_PREFIXOS_CODIGO = ("referê", "refere", "ref.", "cod", "cód", "produto", "item", "sku")
+_STOPWORDS_CABECALHO = ("do", "da", "de", "dos", "das")
 _ROTULOS_GENERICOS = ("preço", "preco", "valor", "price", "r$", "grade",
                       "tam", "faixa", "desc")
 _ROTULOS_GRADE = ("grade", "tam", "faixa")
@@ -218,10 +219,17 @@ def _analisar_cabecalho(linha: list) -> list[dict] | None:
     palavra Código/Referência abre um segmento. Cada segmento tem o x
     inicial e os rótulos das suas colunas.
     """
-    idx_codigos = [
-        i for i, w in enumerate(linha)
-        if w[4].lower().startswith(_PREFIXOS_CODIGO)
-    ]
+    def _abre_coluna_de_codigo(i: int) -> bool:
+        if not linha[i][4].lower().startswith(_PREFIXOS_CODIGO):
+            return False
+        # "Produto" em "Descrição do Produto" não abre coluna nova
+        if i > 0:
+            anterior = linha[i - 1][4].lower()
+            if anterior in _STOPWORDS_CABECALHO or anterior.startswith("descri"):
+                return False
+        return True
+
+    idx_codigos = [i for i in range(len(linha)) if _abre_coluna_de_codigo(i)]
     if not idx_codigos:
         return None
     segmentos = []
@@ -231,12 +239,36 @@ def _analisar_cabecalho(linha: list) -> list[dict] | None:
         palavras_rotulo = [
             w for w in palavras_seg[1:]
             if not w[4].lower().startswith("descri")
+            and w[4].lower() not in _STOPWORDS_CABECALHO
+            and not w[4].lower().startswith(_PREFIXOS_CODIGO)
         ]
         segmentos.append({
             "x0": palavras_seg[0][0] - 8,
             "colunas": _agrupar_rotulos(palavras_rotulo),
         })
     return segmentos
+
+
+def _e_linha_de_grades(linha: list) -> bool:
+    """Linha que só atualiza as faixas de tamanho das colunas de preço.
+
+    Algumas marcas (ex.: Grupo Kyly/MILON) não põem as faixas no
+    cabeçalho: imprimem uma linha como "1 a 3   4 a 8   10 a 14" entre as
+    linhas de produto, valendo para as linhas seguintes até trocar.
+    """
+    toks = [w[4].strip() for w in linha if w[4].strip()]
+    if not toks:
+        return False
+    for t in toks:
+        if _PRECO_QUALQUER.search(t) or re.search(r"\d{4,}", t) or len(t) > 8:
+            return False
+    tem_a = any(t.lower() == "a" for t in toks)
+    tem_digito = any(re.search(r"\d", t) for t in toks)
+    unico = len(toks) == 1 and toks[0].lower() in ("único", "unico")
+    if not (tem_a or tem_digito or unico):
+        return False
+    # faixas vivem na zona das colunas de preço, não no começo da linha
+    return linha[0][0] >= 100
 
 
 def _dividir_em_segmentos(linha: list, segmentos: list[dict] | None) -> list[tuple[list, list]]:
@@ -332,6 +364,54 @@ def _parse_segmento(palavras: list, colunas: list[tuple[float, str]]):
     return codigo, precos, descricao
 
 
+def _aplicar_grades(linha: list, segmentos: list[dict] | None) -> None:
+    """Substitui os rótulos das colunas de preço pelas faixas desta linha."""
+    if not segmentos:
+        return
+    grupos = _agrupar_rotulos(linha)
+    limites = [s["x0"] for s in segmentos] + [float("inf")]
+    for k, seg in enumerate(segmentos):
+        do_segmento = [g for g in grupos if limites[k] <= g[0] < limites[k + 1]]
+        if do_segmento:
+            seg["colunas"] = do_segmento
+
+
+def mesclar_linhas(
+    grupos: list[list[LinhaTabela]],
+) -> tuple[list[LinhaTabela], list[str]]:
+    """Junta as linhas de várias tabelas (marcas que mandam 2+ arquivos).
+
+    Códigos repetidos entre arquivos são mesclados; conflito de preço para
+    o mesmo código+faixa vira aviso (vale o primeiro arquivo).
+    """
+    por_codigo: dict[str, LinhaTabela] = {}
+    avisos: list[str] = []
+    for linhas in grupos:
+        for linha in linhas:
+            registro = por_codigo.get(linha.codigo)
+            if registro is None:
+                por_codigo[linha.codigo] = LinhaTabela(
+                    codigo=linha.codigo,
+                    precos=list(linha.precos),
+                    descricao=linha.descricao,
+                )
+                continue
+            if linha.descricao and not registro.descricao:
+                registro.descricao = linha.descricao
+            for pt in linha.precos:
+                existente = next(
+                    (p for p in registro.precos if p.rotulo == pt.rotulo), None
+                )
+                if existente is None:
+                    registro.precos.append(pt)
+                elif existente.valor != pt.valor:
+                    avisos.append(
+                        f"Código “{linha.codigo}” aparece em mais de um arquivo "
+                        "com preços diferentes — usando o primeiro."
+                    )
+    return list(por_codigo.values()), avisos
+
+
 def ler_tabela_pdf(dados: bytes) -> tuple[list[LinhaTabela], list[str]]:
     """Extrai código → preços de uma tabela em PDF.
 
@@ -357,10 +437,33 @@ def ler_tabela_pdf(dados: bytes) -> tuple[list[LinhaTabela], list[str]]:
         words = page.get_text("words")
         if words:
             tinha_texto = True
-        for linha in _agrupar_em_linhas(words):
+        linhas_visuais = _agrupar_em_linhas(words)
+        i = 0
+        while i < len(linhas_visuais):
+            linha = linhas_visuais[i]
+            i += 1
             cab = _analisar_cabecalho(linha)
             if cab:
+                # cabeçalho repetido com rótulos genéricos ("Fx1", "Fx2"...)
+                # não pode apagar as faixas reais vindas das linhas de grade
+                if segmentos and len(cab) == len(segmentos):
+                    for novo, velho in zip(cab, segmentos):
+                        genericos = novo["colunas"] and all(
+                            re.fullmatch(r"(?i)fx\d*", r) for _x, r in novo["colunas"]
+                        )
+                        if genericos and velho["colunas"]:
+                            novo["colunas"] = velho["colunas"]
                 segmentos = cab
+                continue
+            if _e_linha_de_grades(linha):
+                # faixa quebrada em duas linhas ("3A6M a" / "18A24"):
+                # junta com a próxima antes de aplicar
+                if (linha[-1][4].strip().lower() == "a"
+                        and i < len(linhas_visuais)
+                        and _e_linha_de_grades(linhas_visuais[i])):
+                    linha = linha + linhas_visuais[i]
+                    i += 1
+                _aplicar_grades(linha, segmentos)
                 continue
             for palavras_seg, colunas in _dividir_em_segmentos(linha, segmentos):
                 resultado = _parse_segmento(palavras_seg, colunas)

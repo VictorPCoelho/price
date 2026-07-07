@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from precificador.carimbo import ItemCarimbo, carimbar
 from precificador.extracao import localizar_codigos
 from precificador.tabela import (
+    LinhaTabela,
     adivinhar_colunas,
     extrair_linhas,
     ler_planilha,
@@ -217,6 +218,88 @@ def test_tabela_pdf_blocos_lado_a_lado_com_grade():
     assert por["1264030"] == [("B/MB/GB/GG", 87.90), ("1/2/3", 89.90)]
     assert por["1264007"] == [("B/MB/GB/GG", 41.90)]
     assert por["1264031"] == [("ÚNICO", 99.90)]
+
+
+def test_tabela_pdf_estilo_milon():
+    """Layout Grupo Kyly/MILON: coluna 'Coleção' antes do código, cabeçalho
+    'Produto'/'Descrição do Produto'/Fx1..Fx3, e faixas de tamanho em linhas
+    soltas entre os produtos (inclusive quebradas em duas linhas)."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((10, 78), "Coleção", fontsize=8)
+    page.insert_text((52, 78), "Produto", fontsize=8)
+    page.insert_text((102, 78), "Descrição do Produto", fontsize=8)
+    for x, fx in [(275, "Fx1"), (332, "Fx2"), (389, "Fx3")]:
+        page.insert_text((x, 78), fx, fontsize=8)
+    # faixa quebrada em duas linhas: "3A6M a" / "18A24"
+    page.insert_text((266, 100), "3A6M a", fontsize=7)
+    page.insert_text((269, 112), "18A24", fontsize=7)
+    page.insert_text((10, 126), "MAV27", fontsize=8)
+    page.insert_text((53, 126), "2001638", fontsize=8)
+    page.insert_text((102, 126), "CONJUNTO FEMININO", fontsize=8)
+    page.insert_text((264, 126), "R$", fontsize=8)
+    page.insert_text((276, 126), "242,79", fontsize=8)
+    # nova faixa com 3 colunas numa linha só
+    page.insert_text((272, 144), "1 a 3", fontsize=7)
+    page.insert_text((329, 144), "4 a 8", fontsize=7)
+    page.insert_text((380, 144), "10 a 14", fontsize=7)
+    page.insert_text((10, 160), "MAV27", fontsize=8)
+    page.insert_text((53, 160), "2001643", fontsize=8)
+    page.insert_text((102, 160), "VESTIDO", fontsize=8)
+    for x, v in [(264, "232,69"), (321, "262,99"), (377, "293,39")]:
+        page.insert_text((x, 160), "R$", fontsize=8)
+        page.insert_text((x + 12, 160), v, fontsize=8)
+    # linha seguinte herda as mesmas faixas
+    page.insert_text((10, 176), "MAV27", fontsize=8)
+    page.insert_text((53, 176), "2001644", fontsize=8)
+    page.insert_text((102, 176), "CONJUNTO MASC", fontsize=8)
+    page.insert_text((264, 176), "R$", fontsize=8)
+    page.insert_text((276, 176), "151,79", fontsize=8)
+    dados = doc.tobytes()
+    doc.close()
+
+    linhas, avisos = ler_tabela_pdf(dados)
+    assert avisos == []
+    por = {l.codigo: l for l in linhas}
+    # a coluna "Coleção" (MAV27) não vira código nem descrição
+    assert set(por) == {"2001638", "2001643", "2001644"}
+    assert _precos(por["2001638"]) == [("3A6M a 18A24", 242.79)]
+    assert por["2001638"].descricao == "CONJUNTO FEMININO"
+    assert _precos(por["2001643"]) == [
+        ("1 a 3", 232.69), ("4 a 8", 262.99), ("10 a 14", 293.39)
+    ]
+    assert _precos(por["2001644"]) == [("1 a 3", 151.79)]
+
+
+def test_mesclar_linhas_de_varios_arquivos():
+    from precificador.tabela import PrecoTamanho, mesclar_linhas
+
+    a = [LinhaTabela("111", [PrecoTamanho("1 a 3", 10.0)], "BLUSA")]
+    b = [
+        LinhaTabela("111", [PrecoTamanho("4 a 8", 12.0)], ""),
+        LinhaTabela("222", [PrecoTamanho("", 20.0)], "SHORT"),
+    ]
+    c = [LinhaTabela("111", [PrecoTamanho("1 a 3", 99.0)], "")]  # conflito
+    linhas, avisos = mesclar_linhas([a, b, c])
+    por = {l.codigo: l for l in linhas}
+    assert _precos(por["111"]) == [("1 a 3", 10.0), ("4 a 8", 12.0)]
+    assert por["111"].descricao == "BLUSA"
+    assert _precos(por["222"]) == [("", 20.0)]
+    assert len(avisos) == 1 and "111" in avisos[0]
+
+
+def test_localiza_codigo_com_espacamento_de_letras():
+    """Catálogos imprimem a ref espaçada no rodapé: '2 0 0 2 1 8 0'."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "2 0 0 2 1 8 0", fontsize=10)
+    page.insert_text((300, 100), "2 0 0 1 9 3 8", fontsize=10)
+    pdf = doc.tobytes()
+    doc.close()
+    ocorrencias, _ = localizar_codigos(pdf, ["2002180", "2001938", "9999999"])
+    assert len(ocorrencias["2002180"]) == 1
+    assert len(ocorrencias["2001938"]) == 1
+    assert ocorrencias["9999999"] == []
 
 
 # ------------------------------------------------------- etiquetas e logo

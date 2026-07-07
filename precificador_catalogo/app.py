@@ -48,6 +48,7 @@ from precificador.tabela import (
     extrair_linhas,
     ler_planilha,
     ler_tabela_pdf,
+    mesclar_linhas,
 )
 
 st.set_page_config(page_title="Precificador de Catálogos", page_icon="👶", layout="wide")
@@ -360,51 +361,71 @@ else:
     with col_up1:
         arq_catalogo = st.file_uploader("Catálogo (PDF com fotos e códigos)", type=["pdf"])
     with col_up2:
-        arq_tabela = st.file_uploader(
-            "Tabela de preços (Excel, CSV ou PDF)", type=["xlsx", "xls", "csv", "pdf"]
+        arqs_tabela = st.file_uploader(
+            "Tabela(s) de preços (Excel, CSV ou PDF)",
+            type=["xlsx", "xls", "csv", "pdf"],
+            accept_multiple_files=True,
+            help="Algumas marcas mandam o preço em mais de um arquivo "
+            "(ex.: linha alta + linha essencial) — envie todos de uma vez.",
         )
 
-    if arq_catalogo is None or arq_tabela is None:
-        st.info("Envie os dois arquivos para começar.")
+    if arq_catalogo is None or not arqs_tabela:
+        st.info("Envie o catálogo e pelo menos uma tabela de preços para começar.")
         st.stop()
 
     pdf_bytes = arq_catalogo.getvalue()
-    tabela_bytes = arq_tabela.getvalue()
 
-    # ----- lê a tabela de preços
-    if arq_tabela.name.lower().endswith(".pdf"):
-        linhas_tabela, avisos_tabela = ler_tabela_pdf(tabela_bytes)
-    else:
-        try:
-            df_bruto = ler_planilha(tabela_bytes, arq_tabela.name)
-        except Exception as e:
-            st.error(f"Não consegui ler a planilha: {e}")
-            st.stop()
-        chute_cod, chute_precos = adivinhar_colunas(df_bruto)
-        colunas = list(df_bruto.columns)
-        st.markdown("**Qual coluna é o quê?** (confira a pré-visualização)")
-        col_a, col_b, col_c = st.columns([1, 1, 2])
-        with col_a:
-            col_codigo = st.selectbox(
-                "Coluna do código", colunas,
-                index=colunas.index(chute_cod) if chute_cod in colunas else 0,
+    # ----- lê a(s) tabela(s) de preços
+    grupos_linhas = []
+    avisos_tabela = []
+    varios_arquivos = len(arqs_tabela) > 1
+    for arq_tabela in arqs_tabela:
+        tabela_bytes = arq_tabela.getvalue()
+        if arq_tabela.name.lower().endswith(".pdf"):
+            linhas_arq, avisos_arq = ler_tabela_pdf(tabela_bytes)
+        else:
+            try:
+                df_bruto = ler_planilha(tabela_bytes, arq_tabela.name)
+            except Exception as e:
+                st.error(f"Não consegui ler a planilha {arq_tabela.name}: {e}")
+                st.stop()
+            chute_cod, chute_precos = adivinhar_colunas(df_bruto)
+            colunas = list(df_bruto.columns)
+            st.markdown(f"**Colunas de “{arq_tabela.name}”** (confira a pré-visualização)")
+            col_a, col_b, col_c = st.columns([1, 1, 2])
+            with col_a:
+                col_codigo = st.selectbox(
+                    "Coluna do código", colunas,
+                    index=colunas.index(chute_cod) if chute_cod in colunas else 0,
+                    key=f"colcod_{arq_tabela.name}",
+                )
+            with col_b:
+                cols_preco = st.multiselect(
+                    "Coluna(s) de preço", colunas,
+                    default=[c for c in chute_precos if c != col_codigo],
+                    key=f"colpreco_{arq_tabela.name}",
+                    help="Se a tabela tem um preço por faixa de tamanho, "
+                    "selecione todas as colunas de preço.",
+                )
+            with col_c:
+                st.dataframe(df_bruto.head(5), use_container_width=True, hide_index=True)
+            if not cols_preco:
+                st.error("Selecione pelo menos uma coluna de preço.")
+                st.stop()
+            if col_codigo in cols_preco:
+                st.error("A coluna do código não pode ser também coluna de preço.")
+                st.stop()
+            linhas_arq, avisos_arq = extrair_linhas(df_bruto, col_codigo, cols_preco)
+        grupos_linhas.append(linhas_arq)
+        prefixo = f"{arq_tabela.name}: " if varios_arquivos else ""
+        avisos_tabela.extend(prefixo + a for a in avisos_arq)
+        if not linhas_arq:
+            avisos_tabela.append(
+                f"{prefixo}nenhum par código + preço foi extraído deste arquivo."
             )
-        with col_b:
-            cols_preco = st.multiselect(
-                "Coluna(s) de preço", colunas,
-                default=[c for c in chute_precos if c != col_codigo],
-                help="Se a tabela tem um preço por faixa de tamanho, "
-                "selecione todas as colunas de preço.",
-            )
-        with col_c:
-            st.dataframe(df_bruto.head(5), use_container_width=True, hide_index=True)
-        if not cols_preco:
-            st.error("Selecione pelo menos uma coluna de preço.")
-            st.stop()
-        if col_codigo in cols_preco:
-            st.error("A coluna do código não pode ser também coluna de preço.")
-            st.stop()
-        linhas_tabela, avisos_tabela = extrair_linhas(df_bruto, col_codigo, cols_preco)
+
+    linhas_tabela, avisos_mescla = mesclar_linhas(grupos_linhas)
+    avisos_tabela.extend(avisos_mescla)
 
     for aviso in avisos_tabela:
         st.warning(aviso, icon="⚠️")

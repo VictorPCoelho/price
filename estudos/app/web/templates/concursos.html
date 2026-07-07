@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titulo %}Concursos — Maestro{% endblock %}
+{% block conteudo %}
+<h1>Concursos</h1>
+
+{% if not concursos %}
+<div class="cartao">
+  <h2>Bem-vindo! Vamos começar 🎯</h2>
+  <p class="mudo">O Maestro conduz seu estudo: edital verticalizado, ciclo de estudos,
+  revisões espaçadas (1/7/30 dias) e a resposta para "o que estudar agora".</p>
+  <p class="rodape-passos">Passos: <b>1.</b> crie o concurso abaixo →
+  <b>2.</b> cadastre disciplinas e cole os tópicos do edital →
+  <b>3.</b> monte o ciclo de estudos → <b>4.</b> aperte "Estudar agora".</p>
+</div>
+{% endif %}
+
+<div class="cartao">
+  <h2>Novo concurso</h2>
+  <form class="linha" method="post" action="/concursos">
+    <div><label>Nome *</label><input name="nome" required placeholder="ex.: Receita Federal — Auditor"></div>
+    <div><label>Banca</label><input name="banca" placeholder="ex.: FGV"></div>
+    <div><label>Data da prova</label><input type="date" name="data_prova"></div>
+    <button type="submit">Criar</button>
+  </form>
+</div>
+
+{% if concursos %}
+<div class="cartao">
+  <h2>Meus concursos</h2>
+  <table>
+    <tr><th>Nome</th><th>Banca</th><th>Prova</th><th></th></tr>
+    {% for c in concursos %}
+    <tr>
+      <td><b>{{ c.nome }}</b></td>
+      <td>{{ c.banca or "—" }}</td>
+      <td>{{ c.data_prova | data_br }}</td>
+      <td>
+        {% if concurso and c.id == concurso.id %}
+          <span class="selo dominado">ativo</span>
+        {% else %}
+          <form method="post" action="/concursos/{{ c.id }}/ativar" style="display:inline">
+            <button class="mini suave" type="submit">ativar</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

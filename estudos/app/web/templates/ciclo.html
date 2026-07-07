@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block titulo %}Ciclo — Maestro{% endblock %}
+{% block conteudo %}
+<h1>Ciclo de estudos</h1>
+<p class="mudo">O ciclo é uma sequência circular de blocos: terminou um, o ponteiro avança.
+Sem cronograma fixo, sem "atraso" acumulado.</p>
+
+<div class="cartao">
+  <h2>Novo bloco</h2>
+  {% if disciplinas %}
+  <form class="linha" method="post" action="/ciclo/blocos">
+    <input type="hidden" name="concurso_id" value="{{ concurso.id }}">
+    <div>
+      <label>Disciplina</label>
+      <select name="disciplina_id" required>
+        {% for d in disciplinas %}<option value="{{ d.id }}">{{ d.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label>Duração alvo (min)</label><input type="number" name="duracao_min" value="60" min="10" step="5" style="width:90px"></div>
+    <button type="submit">Adicionar ao ciclo</button>
+  </form>
+  {% else %}
+  <p class="mudo">Cadastre disciplinas no <a href="/edital">edital</a> primeiro.</p>
+  {% endif %}
+</div>
+
+{% if blocos %}
+<div class="cartao">
+  <h2>Sequência do ciclo</h2>
+  <table>
+    <tr><th>#</th><th>Disciplina</th><th>Duração</th><th></th><th></th></tr>
+    {% for b in blocos %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><b>{{ b.disciplina_nome }}</b></td>
+      <td>{{ b.duracao_min }} min</td>
+      <td>
+        {% if bloco_atual and b.id == bloco_atual.id %}
+          <span class="selo teoria_vista">◉ bloco atual</span>
+        {% endif %}
+      </td>
+      <td>
+        <form method="post" action="/ciclo/blocos/{{ b.id }}/remover">
+          <button class="mini suave" type="submit" onclick="return confirm('Remover este bloco do ciclo?')">remover</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div style="margin-top:12px">
+    <form method="post" action="/ciclo/avancar">
+      <input type="hidden" name="concurso_id" value="{{ concurso.id }}">
+      <button class="suave" type="submit">Pular / avançar bloco →</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block titulo %}Edital — Maestro{% endblock %}
+{% block conteudo %}
+<h1>Edital verticalizado</h1>
+
+<div class="cartao">
+  <h2>Nova disciplina</h2>
+  <form class="linha" method="post" action="/disciplinas">
+    <input type="hidden" name="concurso_id" value="{{ concurso.id }}">
+    <div><label>Nome *</label><input name="nome" required placeholder="ex.: Direito Administrativo"></div>
+    <div><label>Peso (nº de questões na prova)</label><input type="number" name="peso" value="10" min="1" style="width:90px"></div>
+    <button type="submit">Adicionar</button>
+  </form>
+</div>
+
+{% for item in disciplinas %}
+<div class="cartao">
+  <h2>{{ item.disciplina.nome }} <span class="mudo">· peso {{ item.disciplina.peso }} · {{ item.topicos | length }} tópico{{ 's' if item.topicos | length != 1 }}</span></h2>
+
+  <details {{ 'open' if not item.topicos }}>
+    <summary>+ colar tópicos do edital</summary>
+    <form method="post" action="/disciplinas/{{ item.disciplina.id }}/topicos" style="margin-top:10px">
+      <textarea name="texto" rows="5" required
+        placeholder="Cole aqui o trecho do edital. Um tópico por linha (ponto e vírgula também separa).&#10;ex.:&#10;1. Atos administrativos: conceito; requisitos; atributos&#10;2. Poderes da administração"></textarea>
+      <div style="margin-top:8px"><button type="submit">Adicionar tópicos</button></div>
+    </form>
+  </details>
+
+  {% if item.topicos %}
+  <table>
+    <tr><th style="width:60%">Tópico</th><th>Status</th></tr>
+    {% for t in item.topicos %}
+    <tr>
+      <td>{{ t.titulo }}</td>
+      <td>
+        <form method="post" action="/topicos/{{ t.id }}/status" style="display:flex;gap:6px;align-items:center">
+          <span class="selo {{ t.status }}">{{ t.status | status_rotulo }}</span>
+          <select name="status" onchange="this.form.submit()" title="ajustar status manualmente">
+            <option value="">alterar…</option>
+            {% for valor, rotulo in status_rotulos.items() %}
+              {% if valor != t.status %}<option value="{{ valor }}">{{ rotulo }}</option>{% endif %}
+            {% endfor %}
+          </select>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% else %}
+<p class="mudo">Cadastre a primeira disciplina acima para começar a verticalizar o edital.</p>
+{% endfor %}
+{% endblock %}

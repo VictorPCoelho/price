@@ -1,6 +1,9 @@
 # Brainstorm — Ferramenta de Condução de Estudos para Concursos
 
 > Documento de brainstorm. Objetivo: definir a lógica do modelo antes de construir qualquer coisa.
+>
+> **Status**: Fatia 1 construída em [`estudos/`](../estudos/README.md) (edital verticalizado,
+> ciclo, sessões com cronômetro, revisões 1/7/30 e "estudar agora").
 
 ---
 

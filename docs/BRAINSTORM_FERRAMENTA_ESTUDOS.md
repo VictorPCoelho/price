@@ -110,10 +110,59 @@ Um tópico só é "dominado" com taxa de acerto ≥ X% (ex.: 80%) e revisões em
 
 ---
 
-## 6. Decisões em aberto (para a próxima conversa)
+## 6. Integração com o material (PDFs do Estratégia Concursos)
+
+Os PDFs do Estratégia têm uma estrutura previsível — teoria em seções numeradas, **questões comentadas ao final**, resumo/esquemas, sumário navegável — e isso os torna excelentes para automação. A ferramenta deixa de ser só um "maestro de agenda" e passa a entender o conteúdo da jornada.
+
+> Nota: uso estritamente pessoal. Os PDFs têm marca d'água nominal; nada de redistribuir conteúdo — a ferramenta processa localmente, para o próprio assinante.
+
+### 6.1 Biblioteca de materiais (a base de tudo)
+
+- Importar os PDFs e **vincular cada aula aos tópicos do edital verticalizado** (o sumário do PDF ajuda a mapear automaticamente).
+- Rastrear **progresso de leitura**: página onde parou, % concluído por aula e por tópico.
+- Medir **velocidade de leitura** (páginas líquidas/hora) → a projeção "você fecha o edital em N semanas" deixa de ser chute e vira dado real. Com cursos do Estratégia somando milhares de páginas, isso responde a pergunta crítica: **"leio tudo ou vou de resumo em quais matérias?"**
+
+### 6.2 Leitor integrado com sessão automática
+
+- Abrir o PDF dentro da ferramenta com timer acoplado: a sessão de estudo se registra sozinha (tópico, tempo líquido, páginas lidas). Elimina o atrito de registrar manualmente — atrito é o que mata o uso de planilha.
+- **Grifos e notas** vinculados ao tópico. Na revisão, em vez de reler 150 páginas, a ferramenta monta a "versão grifada" da aula.
+
+### 6.3 Extração automática de valor do PDF
+
+- **Questões comentadas → banco interno**: extrair as questões do final de cada aula e transformá-las em baterias respondíveis na ferramenta. Isso resolve a decisão nº 4 (banco de questões) de graça: o Estratégia já entrega centenas de questões por aula, com gabarito e comentário. Cada bateria alimenta a proficiência do tópico no motor de prioridade.
+- **Resumos e esquemas → material de revisão**: a seção de resumo do PDF vira o conteúdo padrão das revisões 24h/7d/30d.
+
+### 6.4 Camada de IA sobre o material (fase 3, mas é onde brilha)
+
+- **Teste de saída**: ao fechar uma sessão de leitura, o LLM gera 5 perguntas de recall ativo sobre exatamente o trecho lido. Estudo passivo vira ativo no ato.
+- **Flashcards automáticos** dos trechos grifados → deck de revisão espaçada sem esforço manual.
+- **"Pergunte ao material"** (RAG sobre os PDFs indexados): "onde o material fala de X?", "explica esse parágrafo com um exemplo", "qual a diferença entre A e B segundo a aula 03?".
+- **Verticalização automática**: colar o PDF do edital e o LLM monta a árvore de tópicos e sugere o vínculo com as aulas.
+
+### 6.5 Viabilidade técnica (resumo)
+
+- Extração de texto/sumário/questões: `PyMuPDF` ou `pdfplumber` — os PDFs do Estratégia são texto nativo (não imagem), o que torna isso confiável.
+- Questões têm padrão visual/textual consistente (enunciado, alternativas, gabarito comentado) → parsing por regex/heurística cobre a maioria; LLM cobre o resto.
+- RAG local: embeddings + SQLite/Chroma; chamadas de LLM via API só quando o usuário pede.
+
+### 6.6 O fluxo da jornada com o material integrado
+
+```
+1. Ferramenta diz: "agora: Direito Administrativo — Atos Administrativos (aula 04, pág. 37)"
+2. Abre o leitor, timer roda, você grifa. Fecha → sessão registrada sozinha.
+3. Teste de saída: 5 perguntas sobre o que acabou de ler.
+4. Bateria com as questões comentadas extraídas da própria aula → proficiência atualizada.
+5. Revisões +1d/+7d/+30d agendadas usando o resumo do PDF + seus grifos + flashcards.
+6. Dashboard reprojeta a data de conclusão do edital com sua velocidade real de leitura.
+```
+
+---
+
+## 7. Decisões em aberto (para a próxima conversa)
 
 1. **Plataforma**: app web local (Streamlit/Dash — stack que você já domina no projeto de precificação) vs. web hospedado vs. mobile-first? Sugestão inicial: **Streamlit/Dash local com SQLite** — rápido de construir e validar o modelo.
 2. **Uso pessoal ou produto?** Muda tudo em autenticação, hospedagem e polimento.
 3. **Qual concurso/banca alvo?** (CESPE/Cebraspe, FGV, FCC...) O estilo da banca influencia o modelo (certo/errado vs. múltipla escolha muda a métrica de proficiência).
-4. **Banco de questões**: registrar manualmente resultados dos sites (simples) vs. ter questões dentro da ferramenta (muito mais trabalho/conteúdo)?
+4. **Banco de questões**: ~~registrar manualmente vs. questões internas~~ → em boa parte resolvido pela extração das questões comentadas dos PDFs do Estratégia (seção 6.3). Resta decidir se também registramos baterias feitas fora (QConcursos/TEC) de forma manual.
 5. **Revisão**: fixa 24h/7d/30d (simples, previsível) vs. SM-2 adaptativo (melhor, porém mais complexo)?
+6. **Leitor de PDF**: embutido na ferramenta (sessão automática, grifos integrados — mais trabalho de construir) vs. ler fora e registrar só o progresso (MVP mais rápido)?

@@ -145,7 +145,42 @@ Os PDFs do Estratégia têm uma estrutura previsível — teoria em seções num
 - Questões têm padrão visual/textual consistente (enunciado, alternativas, gabarito comentado) → parsing por regex/heurística cobre a maioria; LLM cobre o resto.
 - RAG local: embeddings + SQLite/Chroma; chamadas de LLM via API só quando o usuário pede.
 
-### 6.6 O fluxo da jornada com o material integrado
+### 6.6 Colocar os PDFs dentro da ferramenta — ingestão e armazenamento
+
+A ferramenta passa a ser **a estante única do material**: aulas do Estratégia, mapas da Lulu, editais, lei seca — tudo entra pelo mesmo funil.
+
+**Pipeline de ingestão (o funil):**
+
+```
+1. ENTRADA     arrastar-e-soltar na tela  OU  pasta monitorada
+               (ex.: ~/Concurso/PDFs — salvou o download lá, a ferramenta ingere sozinha)
+2. DEDUP       hash do arquivo → não importa duas vezes a mesma aula/versão
+3. METADADOS   nome do arquivo + capa do PDF → detectar curso, disciplina, nº da aula
+               (PDFs do Estratégia têm padrão de nome/capa consistente)
+4. CLASSIFICAR tipo do material: aula | resumo | mapa mental | edital | lei seca | simulado
+5. VÍNCULO     sumário do PDF × edital verticalizado → sugestão automática de
+               "aula 04 cobre os tópicos 3.1, 3.2 e 3.4" (usuário confirma/ajusta)
+6. INDEXAR     texto por página (busca) + embeddings (RAG) + extração de questões (§6.3)
+7. PRONTO      aula aparece na estante com: tópicos vinculados, nº de páginas,
+               nº de questões extraídas, custo estimado em horas (§8)
+```
+
+**Armazenamento — local por padrão, por três razões:**
+
+- **Licença**: os PDFs têm marca d'água nominal do assinante; mantê-los na máquina do usuário (filesystem + SQLite para metadados/anotações) evita qualquer zona cinzenta de re-hospedagem em nuvem.
+- **Tamanho**: uma aula tem 5–20 MB; um curso completo, 1–2 GB. Trivial em disco local, caro e lento para subir em nuvem.
+- **Simplicidade**: casa com o MVP Streamlit/Dash + SQLite. Duas opções de guarda: *copiar* para a biblioteca da ferramenta (organização garantida) ou *referenciar no lugar* (o arquivo fica onde está; a ferramenta só indexa). Sugestão: copiar — evita links quebrados.
+
+**Leitor embutido (viabilidade real):**
+
+- **PDF.js** (o leitor do Firefox, open source) embute em qualquer app web — funciona em Dash/Streamlit via componente. Renderiza fiel, com zoom, busca e navegação por sumário.
+- **Grifos e notas como camada separada**: as anotações são salvas no banco (página + coordenadas + cor + texto), **nunca alterando o PDF original**. Vantagens: o arquivo fica intacto (re-download/atualização de versão não perde nada), os grifos são consultáveis como dados ("todos os meus grifos de Atos Administrativos") e viram matéria-prima de cards (§7.1).
+- **Retomada automática**: a ferramenta guarda página e posição por aula — "continuar de onde parei" é um clique a partir da tela "estudar agora".
+- **Fallback OCR**: se algum material vier escaneado (raro no Estratégia), `ocrmypdf`/Tesseract entra no passo 6 do funil.
+
+**Backup**: exportar/importar a biblioteca inteira (PDFs + banco de anotações + progresso) num zip — proteção contra troca de máquina.
+
+### 6.7 O fluxo da jornada com o material integrado
 
 ```
 1. Ferramenta diz: "agora: Direito Administrativo — Atos Administrativos (aula 04, pág. 37)"

@@ -67,12 +67,21 @@ def _tamanho_fonte_que_cabe(texto: str, largura: float, altura: float) -> float:
 
 COR_ETIQUETA_PADRAO = (0.24, 0.24, 0.27)  # grafite neutro
 
+POSICOES_ETIQUETA = {
+    "auto": "Automática (procura o melhor lugar)",
+    "abaixo": "Preferir abaixo do código",
+    "acima": "Preferir acima do código",
+    "direita": "Preferir à direita do código",
+    "esquerda": "Preferir à esquerda do código",
+}
+
 
 def carimbar(
     pdf_bytes: bytes,
     itens: list[ItemCarimbo],
     modo: str = "substituir",
     cor_etiqueta: tuple[float, float, float] = COR_ETIQUETA_PADRAO,
+    preferencia: str = "auto",
 ) -> bytes:
     """Aplica os carimbos e retorna os bytes do novo PDF.
 
@@ -95,9 +104,18 @@ def carimbar(
             _substituir_na_pagina(page, itens_pagina)
         else:
             # etiquetas não podem cobrir os códigos nem umas às outras;
-            # os demais textos da página são evitados quando há espaço
+            # textos e fotos da página são evitados quando há espaço
+            # (texto pesa mais: cobrir foto é ruim, cobrir texto é pior)
             obstaculos = [fitz.Rect(i.bbox) for i in itens_pagina]
             textos_da_pagina = [fitz.Rect(w[:4]) for w in page.get_text("words")]
+            fotos_da_pagina = [
+                fitz.Rect(info["bbox"]) for info in page.get_image_info()
+            ]
+            # foto de fundo que cobre a página toda não ajuda a decidir
+            fotos_da_pagina = [
+                f for f in fotos_da_pagina
+                if f.get_area() < page.rect.get_area() * 0.9
+            ]
             for item in itens_pagina:
                 linhas = item.linhas_etiqueta or [
                     formatar_brl(item.novo_valor, com_rs=item.tinha_rs)
@@ -105,6 +123,8 @@ def carimbar(
                 etiqueta = _adicionar(
                     page, item.bbox, linhas, obstaculos, cor_etiqueta,
                     evitar_se_der=textos_da_pagina,
+                    fotos=fotos_da_pagina,
+                    preferencia=preferencia,
                 )
                 obstaculos.append(etiqueta)
 
@@ -153,14 +173,18 @@ def _adicionar(
     obstaculos: list[fitz.Rect],
     cor: tuple[float, float, float] = COR_ETIQUETA_PADRAO,
     evitar_se_der: list[fitz.Rect] | None = None,
+    fotos: list[fitz.Rect] | None = None,
+    preferencia: str = "auto",
 ) -> fitz.Rect:
     """Desenha uma etiqueta com o(s) novo(s) preço(s) perto do código.
 
-    Tenta várias posições (abaixo, à direita, acima, mais abaixo...) até
-    achar uma que não cubra os códigos nem as outras etiquetas da página
-    (``obstaculos``, obrigatórios). Os retângulos de ``evitar_se_der``
-    (demais textos da página) só são respeitados se alguma posição
-    permitir. Retorna o retângulo usado, para entrar nos obstáculos.
+    Tenta várias posições até achar uma que não cubra os códigos nem as
+    outras etiquetas (``obstaculos``, invioláveis). Entre as posições
+    possíveis, procura primeiro uma que não cubra nem texto nem foto;
+    não havendo, escolhe a de menor estrago (texto pesa mais que foto).
+    ``preferencia`` prioriza uma direção ("abaixo", "acima", "direita",
+    "esquerda") — útil porque cada marca diagrama o catálogo de um jeito.
+    Retorna o retângulo usado, para entrar nos obstáculos.
     """
     x0, y0, x1, y1 = bbox
     altura_linha = (y1 - y0) * 1.1
@@ -172,29 +196,40 @@ def _adicionar(
     h = altura_linha * len(linhas)
 
     afasta = 4  # maior que a folga de 2pt da checagem de colisão
-    # candidatas em ordem de preferência: colada no código primeiro
-    # (abaixo, direita, acima, esquerda), depois varrendo mais longe
-    candidatas = [
-        fitz.Rect(x0, y1 + afasta, x0 + w, y1 + afasta + h),      # abaixo
-        fitz.Rect(x1 + afasta, y0, x1 + afasta + w, y0 + h),      # à direita
-        fitz.Rect(x0, y0 - afasta - h, x0 + w, y0 - afasta),      # acima
-        fitz.Rect(x0 - afasta - w, y0, x0 - afasta, y0 + h),      # à esquerda
-    ]
+    base = {
+        "abaixo": fitz.Rect(x0, y1 + afasta, x0 + w, y1 + afasta + h),
+        "direita": fitz.Rect(x1 + afasta, y0, x1 + afasta + w, y0 + h),
+        "acima": fitz.Rect(x0, y0 - afasta - h, x0 + w, y0 - afasta),
+        "esquerda": fitz.Rect(x0 - afasta - w, y0, x0 - afasta, y0 + h),
+    }
+    varredura_baixo, varredura_cima = [], []
     deslocs_x = [0, w / 2 + 2, -(w / 2 + 2), w + 4, -(w + 4)]
     for passo in range(1, 7):
         dy = (h + 2) * passo
         for dx in deslocs_x:
-            candidatas.append(fitz.Rect(
+            varredura_baixo.append(fitz.Rect(
                 x0 + dx, y1 + afasta + dy, x0 + dx + w, y1 + afasta + dy + h
             ))
-            candidatas.append(fitz.Rect(
+            varredura_cima.append(fitz.Rect(
                 x0 + dx, y0 - afasta - dy - h, x0 + dx + w, y0 - afasta - dy
             ))
+
+    ordem_padrao = ["abaixo", "direita", "acima", "esquerda"]
+    if preferencia in base:
+        ordem = [preferencia] + [d for d in ordem_padrao if d != preferencia]
+    else:
+        ordem = ordem_padrao
+    candidatas = [base[d] for d in ordem]
+    if preferencia == "acima":
+        candidatas += varredura_cima + varredura_baixo
+    else:
+        candidatas += varredura_baixo + varredura_cima
 
     # o próprio código não é obstáculo para a etiqueta dele
     propria = fitz.Rect(bbox)
     duros = [o for o in obstaculos if o != propria]
     textos = evitar_se_der or []
+    imagens = fotos or []
 
     def _cabe_na_pagina(r: fitz.Rect) -> bool:
         return (page.rect.x0 <= r.x0 and r.x1 <= page.rect.x1
@@ -204,25 +239,27 @@ def _adicionar(
         folga = fitz.Rect(r.x0 - 2, r.y0 - 2, r.x1 + 2, r.y1 + 2)
         return any(folga.intersects(o) for o in duros)
 
-    def _area_de_texto_coberta(r: fitz.Rect) -> float:
+    def _area_coberta(r: fitz.Rect, alvos: list[fitz.Rect]) -> float:
         folga = fitz.Rect(r.x0 - 2, r.y0 - 2, r.x1 + 2, r.y1 + 2)
-        return sum((folga & o).get_area() for o in textos if folga.intersects(o))
+        return sum((folga & o).get_area() for o in alvos if folga.intersects(o))
 
-    # escolhe a primeira posição que não cobre texto nenhum; se não houver,
-    # a que cobre a MENOR área de texto (nunca outra etiqueta ou código)
+    # 1º lugar totalmente limpo (sem texto e sem foto); senão, o de menor
+    # estrago: cobrir texto é muito pior que cobrir foto
     etiqueta = None
     menor = None
     for r in candidatas:
         if not _cabe_na_pagina(r) or _bate_nos_duros(r):
             continue
-        area = _area_de_texto_coberta(r)
-        if area == 0:
+        area_txt = _area_coberta(r, textos)
+        area_foto = _area_coberta(r, imagens)
+        if area_txt == 0 and area_foto == 0:
             etiqueta = r
             break
-        if menor is None or area < menor[0]:
-            menor = (area, r)
+        pontuacao = area_txt * 1000 + area_foto
+        if menor is None or pontuacao < menor[0]:
+            menor = (pontuacao, r)
     if etiqueta is None:
-        etiqueta = menor[1] if menor else candidatas[0]
+        etiqueta = menor[1] if menor else base["abaixo"]
 
     page.draw_rect(etiqueta, color=None, fill=cor, radius=0.2 / len(linhas))
     cor_texto = _cor_do_texto(cor)

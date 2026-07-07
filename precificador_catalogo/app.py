@@ -20,6 +20,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from precificador.carimbo import (
+    POSICOES_ETIQUETA,
     POSICOES_LOGO,
     ItemCarimbo,
     carimbar,
@@ -106,6 +107,24 @@ perfil.cor_etiqueta = st.sidebar.color_picker(
     "Cor da etiqueta de preço", value=perfil.cor_etiqueta,
     help="Cor de fundo da etiqueta no modo “adicionar”. O texto fica branco "
     "ou preto automaticamente, conforme o contraste.",
+)
+perfil.posicao_etiqueta = st.sidebar.selectbox(
+    "Posição da etiqueta", list(POSICOES_ETIQUETA),
+    index=list(POSICOES_ETIQUETA).index(perfil.posicao_etiqueta),
+    format_func=POSICOES_ETIQUETA.get,
+    help="Cada marca diagrama o catálogo de um jeito — se as etiquetas "
+    "estiverem caindo em lugar ruim, escolha a direção que combina com o "
+    "layout desta marca. A etiqueta nunca cobre códigos nem outras "
+    "etiquetas, e evita textos e fotos sempre que houver espaço.",
+)
+perfil.ocorrencias_carimbo = st.sidebar.selectbox(
+    "Quando o código aparece mais de uma vez na página",
+    ["todas", "primeira"],
+    index=["todas", "primeira"].index(perfil.ocorrencias_carimbo),
+    format_func=lambda v: "Etiquetar todas as ocorrências" if v == "todas"
+    else "Etiquetar só a primeira da página",
+    help="Marcas que repetem a referência na mesma página (na foto e no "
+    "bloco de descrição) ficam menos poluídas etiquetando só uma vez.",
 )
 
 with st.sidebar.expander("Limites para alerta"):
@@ -327,6 +346,7 @@ if FLUXO_UM:
         pdf_previa = _aplicar_logo(carimbar(
             pdf_bytes, itens_da_pagina, modo=perfil.modo_carimbo,
             cor_etiqueta=COR_ETIQUETA_RGB,
+            preferencia=perfil.posicao_etiqueta,
         ))
         st.image(imagem_pagina(pdf_previa, pagina_escolhida - 1))
 
@@ -337,6 +357,7 @@ if FLUXO_UM:
             resultado = _aplicar_logo(carimbar(
                 pdf_bytes, itens, modo=perfil.modo_carimbo,
                 cor_etiqueta=COR_ETIQUETA_RGB,
+            preferencia=perfil.posicao_etiqueta,
             ))
         st.session_state.resultado = resultado
         st.session_state.resultado_nome = arquivo.name.replace(".pdf", "") + "_precificado.pdf"
@@ -538,7 +559,13 @@ else:
                 info["descricao"] if perfil.descricao_na_etiqueta else "",
                 info["precos"],
             )
-            for oc in ocorrencias.get(codigo, []):
+            ocs = ocorrencias.get(codigo, [])
+            if perfil.ocorrencias_carimbo == "primeira":
+                primeira_por_pagina: dict[int, object] = {}
+                for o in ocs:
+                    primeira_por_pagina.setdefault(o.pagina, o)
+                ocs = list(primeira_por_pagina.values())
+            for oc in ocs:
                 if apenas_pagina is not None and oc.pagina != apenas_pagina:
                     continue
                 itens.append(ItemCarimbo(
@@ -577,6 +604,7 @@ else:
         st.markdown("**Precificado** (preço ao lado do código)")
         pdf_previa = _aplicar_logo(carimbar(
             pdf_bytes, itens_previa, modo="adicionar", cor_etiqueta=COR_ETIQUETA_RGB,
+            preferencia=perfil.posicao_etiqueta,
         ))
         st.image(imagem_pagina(pdf_previa, pagina_escolhida - 1))
 
@@ -587,6 +615,7 @@ else:
         with st.spinner("Carimbando os preços..."):
             resultado = _aplicar_logo(carimbar(
                 pdf_bytes, itens, modo="adicionar", cor_etiqueta=COR_ETIQUETA_RGB,
+            preferencia=perfil.posicao_etiqueta,
             ))
         st.session_state.resultado2 = resultado
         st.session_state.resultado2_nome = (
@@ -628,6 +657,7 @@ else:
                     pdf_final = _aplicar_logo(carimbar(
                         pdf_bytes, _itens_fluxo2(tabela_ui),
                         modo="adicionar", cor_etiqueta=COR_ETIQUETA_RGB,
+            preferencia=perfil.posicao_etiqueta,
                     ))
                     paginas = paginas_como_jpg(pdf_final)
 

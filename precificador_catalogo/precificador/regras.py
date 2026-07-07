@@ -95,6 +95,8 @@ class PerfilMarca:
     valor_maximo: float = 2000.0  # acima disso o item é sinalizado para revisão
     cor_etiqueta: str = "#3D3D45"  # cor de fundo da etiqueta (grafite neutro)
     descricao_na_etiqueta: bool = True  # 1ª linha da etiqueta = descrição da peça
+    posicao_etiqueta: str = "auto"  # chave de POSICOES_ETIQUETA (carimbo.py)
+    ocorrencias_carimbo: str = "todas"  # "todas" | "primeira" (por página)
     usar_logo: bool = True  # inserir o logo salvo da marca ao gerar o PDF
     logo_posicao: str = "inferior-direito"  # chave de POSICOES_LOGO
     logo_largura: int = 20  # largura do logo em % da largura da página

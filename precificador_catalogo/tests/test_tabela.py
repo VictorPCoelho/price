@@ -382,6 +382,60 @@ def test_etiqueta_nao_cobre_descricao_quando_ha_espaco():
             assert not e.intersects(p), (e, p)
 
 
+def _pagina_com_foto_e_codigo():
+    """Página estilo catálogo de fotos: imagem da peça com o código abaixo
+    e espaço em branco embaixo do código."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    img = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 80))
+    img.set_rect(img.irect, (180, 60, 60))
+    foto = fitz.Rect(100, 100, 300, 400)
+    page.insert_image(foto, stream=img.tobytes("png"))
+    page.insert_text((150, 420), "2002115", fontsize=10)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf, foto
+
+
+def test_etiqueta_evita_a_foto_da_peca():
+    pdf, foto = _pagina_com_foto_e_codigo()
+    ocs, _ = localizar_codigos(pdf, ["2002115"])
+    itens = [ItemCarimbo(pagina=0, bbox=ocs["2002115"][0].bbox, novo_valor=0.0,
+                         linhas_etiqueta=["BLUSA FEM", "1 a 3: R$ 88,90",
+                                          "4 a 8: R$ 101,90"])]
+    saida = carimbar(pdf, itens, modo="adicionar")
+    doc = fitz.open(stream=saida, filetype="pdf")
+    fills = [d["rect"] for d in doc[0].get_drawings() if d.get("fill")]
+    doc.close()
+    assert len(fills) == 1
+    # há espaço livre abaixo do código: a etiqueta não pode subir na foto
+    assert not fills[0].intersects(foto), fills[0]
+
+
+def test_preferencia_de_posicao_da_etiqueta():
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((280, 400), "1023", fontsize=10)  # isolado no centro
+    page.insert_text((40, 820), "rodapé da página", fontsize=8)
+    pdf = doc.tobytes()
+    doc.close()
+    ocs, _ = localizar_codigos(pdf, ["1023"])
+    bbox = fitz.Rect(ocs["1023"][0].bbox)
+
+    posicoes = {}
+    for pref in ("abaixo", "acima", "direita", "esquerda"):
+        itens = [ItemCarimbo(pagina=0, bbox=tuple(bbox), novo_valor=59.90)]
+        saida = carimbar(pdf, itens, modo="adicionar", preferencia=pref)
+        d = fitz.open(stream=saida, filetype="pdf")
+        r = [x["rect"] for x in d[0].get_drawings() if x.get("fill")][0]
+        d.close()
+        posicoes[pref] = r
+    assert posicoes["abaixo"].y0 >= bbox.y1
+    assert posicoes["acima"].y1 <= bbox.y0
+    assert posicoes["direita"].x0 >= bbox.x1
+    assert posicoes["esquerda"].x1 <= bbox.x0
+
+
 def test_cor_da_etiqueta_personalizada():
     doc = fitz.open()
     page = doc.new_page()

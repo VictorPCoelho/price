@@ -158,7 +158,66 @@ Os PDFs do Estratégia têm uma estrutura previsível — teoria em seções num
 
 ---
 
-## 7. Decisões em aberto (para a próxima conversa)
+## 7. Anki e flashcards — muito além de "gerar cards"
+
+O Anki é a melhor ferramenta de revisão espaçada que existe, e brigar com ele seria burrice. A estratégia é: **a ferramenta vira uma fábrica de cards de alta qualidade + um consumidor das estatísticas do Anki**, fechando o ciclo com o motor de prioridade.
+
+### 7.1 Fontes automáticas de cards (o quê vira card)
+
+| Fonte | Tipo de card | Exemplo |
+|---|---|---|
+| **Questões erradas** | Básico (frente/verso) | Frente: enunciado da questão que você errou. Verso: gabarito + comentário do professor extraído do PDF. É o card de maior valor: nasce exatamente do seu ponto fraco. |
+| **Lei seca** | **Cloze (lacunas)** | "Art. 37: A administração pública obedecerá aos princípios de {{c1::legalidade}}, {{c2::impessoalidade}}..." — cloze é o formato ideal para literalidade, que é o que as bancas cobram. |
+| **Grifos na leitura** | Básico ou cloze | Cada grifo vira candidato a card; o LLM reformula como pergunta. |
+| **Resumos/esquemas do PDF** | **Image occlusion** | Tabelas e esquemas do Estratégia com partes ocultadas — excelente para comparações (ex.: cargo × emprego × função). |
+| **Teste de saída** | Básico | As perguntas de recall que você errou ao fim da sessão de leitura entram direto no deck. |
+| **Súmulas/jurisprudência** | Cloze | "Súmula Vinculante {{c1::13}}: veda o {{c2::nepotismo}}..." |
+| **Estilo da banca** | Certo/errado | Para CESPE: cards no formato da prova — afirmação, e o verso diz CERTO/ERRADO e por quê. Treina o formato real. |
+
+### 7.2 Qualidade dos cards (onde o LLM ganha o jogo)
+
+Card ruim é pior que card nenhum — vira ruído na fila de revisão. Regras que o gerador aplicaria (princípios do SuperMemo/Piotr Woźniak):
+
+- **Atomicidade**: 1 fato por card. O LLM quebra um parágrafo grifado em 3 cards atômicos, não 1 card-parede-de-texto.
+- **Formulação ativa**: sempre pergunta, nunca "leia e lembre".
+- **Listas viram cloze sequencial** ou perguntas de contagem ("quantos são os princípios expressos do art. 37?").
+- **Mnemônicos**: o LLM sugere um (ex.: LIMPE) no verso quando a lista é decorável.
+- **Contexto no rodapé**: todo card carrega a fonte (aula 04, pág. 37, tópico do edital) — um clique volta ao material original.
+- **Deduplicação**: antes de criar, verificar por similaridade (embeddings) se já existe card equivalente no deck.
+- **Revisão humana em lote**: o LLM propõe, você aprova/edita/descarta numa tela de triagem rápida (swipe). Nada entra no deck sem aprovação — mantém a confiança no deck.
+
+### 7.3 Integração técnica com o Anki
+
+Duas vias, complementares:
+
+1. **Exportação `.apkg`** (biblioteca `genanki`, Python): gera decks prontos para importar. Simples, funciona offline, zero dependência.
+2. **AnkiConnect** (API local do Anki desktop): a via rica —
+   - cria/atualiza cards direto no Anki, sem exportar/importar;
+   - organiza decks espelhando o edital (`Concurso::Direito Adm::Atos Administrativos`) com tags automáticas por disciplina/tópico/aula;
+   - **lê as estatísticas de volta**: lapsos, ease, cards maduros vs. jovens por tag.
+
+### 7.4 Fechando o ciclo: Anki → motor de prioridade
+
+Este é o diferencial que nenhuma ferramenta faz hoje:
+
+```
+lapsos no Anki no tópico X  →  proficiência(X) cai  →  score de prioridade sobe
+→  ferramenta sugere: revisitar teoria / nova bateria de questões do tópico X
+```
+
+Ou seja: o Anki deixa de ser um silo de memorização e vira **sensor de retenção** do sistema. Se você está esquecendo Atos Administrativos (muitos lapsos), o motor detecta antes da prova — não na prova.
+
+### 7.5 Alternativa: revisão interna com FSRS
+
+O algoritmo moderno do Anki (FSRS) é open source e tem implementação em Python (`fsrs`). Dá para ter a revisão espaçada **dentro da própria ferramenta**, sem depender do Anki. Trade-off:
+
+- **A favor do Anki**: app mobile maduro, sincronização, o usuário revisa na fila do banco; ecossistema testado.
+- **A favor do interno**: experiência unificada, estatísticas nativas, cards de questões podem ser interativos (responder alternativa, não só "lembrei/não lembrei").
+- **Sugestão**: começar exportando para o Anki (esforço baixo, valor imediato) e avaliar revisão interna com FSRS depois.
+
+---
+
+## 8. Decisões em aberto (para a próxima conversa)
 
 1. **Plataforma**: app web local (Streamlit/Dash — stack que você já domina no projeto de precificação) vs. web hospedado vs. mobile-first? Sugestão inicial: **Streamlit/Dash local com SQLite** — rápido de construir e validar o modelo.
 2. **Uso pessoal ou produto?** Muda tudo em autenticação, hospedagem e polimento.
@@ -166,3 +225,4 @@ Os PDFs do Estratégia têm uma estrutura previsível — teoria em seções num
 4. **Banco de questões**: ~~registrar manualmente vs. questões internas~~ → em boa parte resolvido pela extração das questões comentadas dos PDFs do Estratégia (seção 6.3). Resta decidir se também registramos baterias feitas fora (QConcursos/TEC) de forma manual.
 5. **Revisão**: fixa 24h/7d/30d (simples, previsível) vs. SM-2 adaptativo (melhor, porém mais complexo)?
 6. **Leitor de PDF**: embutido na ferramenta (sessão automática, grifos integrados — mais trabalho de construir) vs. ler fora e registrar só o progresso (MVP mais rápido)?
+7. **Flashcards**: exportar para o Anki (`.apkg`/AnkiConnect — esforço baixo, app mobile pronto) vs. revisão espaçada interna com FSRS (experiência unificada, mais trabalho)? Sugestão: Anki primeiro, interno depois.

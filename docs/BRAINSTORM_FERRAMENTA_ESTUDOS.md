@@ -315,9 +315,50 @@ Os Mapas da Lulu (≈1.900 mapas, 40+ disciplinas, com mnemônicos, lei seca, ju
 
 ---
 
-## 10. Decisões em aberto (para a próxima conversa)
+## 10. Arquitetura recomendada e estratégia de construção
 
-1. **Plataforma**: app web local (Streamlit/Dash — stack que você já domina no projeto de precificação) vs. web hospedado vs. mobile-first? Sugestão inicial: **Streamlit/Dash local com SQLite** — rápido de construir e validar o modelo.
+### 10.1 A decisão: web app leve, não Streamlit
+
+**Streamlit descartado** (com dor no coração, pela velocidade): duas peças centrais brigam com o modelo dele —
+
+- **Leitor de PDF com grifos**: exige camada de anotação por coordenadas sobre o PDF.js. No Streamlit isso é gambiarra dentro de iframe, frágil e sem acesso decente aos eventos de seleção de texto.
+- **Timer de sessão**: o Streamlit re-executa o script inteiro a cada clique; manter um cronômetro rodando enquanto o usuário lê é nadar contra a corrente.
+- Triagem rápida de cards (aprovar/editar/descartar em sequência) também sofre com o modelo de rerun.
+
+Começar em Streamlit = reescrever tudo na fase 2. Melhor não pagar esse pedágio.
+
+**Recomendação: FastAPI + Jinja + HTMX + PDF.js** — um web app de verdade, mas com o mínimo de JavaScript:
+
+| Camada | Tecnologia | Por quê |
+|---|---|---|
+| Núcleo (engine) | **Pacote Python puro** + SQLite | Toda a inteligência (parser de PDF, motor de prioridade, estimador, agendador de revisões, gerador de cards) vive aqui, **sem nenhuma dependência de UI**. 100% testável. |
+| API | **FastAPI** | Fina — só expõe o núcleo. |
+| Interface | **Jinja + HTMX + Alpine.js** | Interatividade de app (timer, triagem, atualizações parciais) escrevendo ~95% Python/HTML. Sem build de frontend, sem React para manter. |
+| Leitor | **PDF.js** + overlay de anotações | Integra nativamente numa página web; os grifos são eventos JS salvos via API. |
+
+Roda local (`localhost`), single-user, um comando para subir — mesmo modelo dos `iniciar.sh` do projeto de precificação.
+
+### 10.2 Estratégia anti-"monte de processo mal formulado"
+
+O risco real de um projeto desses não é a tecnologia — é acumular features 80% prontas. Antídotos, que valem como contrato de construção:
+
+1. **Fatias verticais, não camadas horizontais.** Cada fatia entrega um fluxo completo, usável no seu estudo real no mesmo dia, antes de começar a próxima:
+   - **Fatia 1**: edital verticalizado + ciclo + registro de sessão + "estudar agora" + revisões 1d/7d/30d. *(Já dá para estudar com a ferramenta.)*
+   - **Fatia 2**: ingestão de PDFs + estante + progresso de leitura + estimador de horas (§8).
+   - **Fatia 3**: leitor embutido com grifos + timer acoplado.
+   - **Fatia 4**: extração de questões + baterias + proficiência alimentando o score.
+   - **Fatia 5**: geração de cards + exportação Anki.
+   - **Fatia 6+**: AnkiConnect de volta, mapas mentais, camada de IA.
+2. **O núcleo é testado contra os SEUS PDFs.** O parser (sumário, questões, metadados) é o ponto com maior risco de "alucinação"; ele nasce com testes dourados sobre aulas reais do Estratégia: *"desta aula 04, extrair 47 questões e este sumário"*. Parser que não passa no teste não entra.
+3. **Heurística conservadora: na dúvida, perguntar — nunca inventar.** Se a extração não tem confiança (sumário estranho, questão mal delimitada), a ferramenta marca "revisar manualmente" em vez de registrar dado errado. Dado ruim no motor de prioridade envenena tudo que vem depois.
+4. **Critério de pronto por fatia**: você usou no estudo real por alguns dias e não voltou para a planilha. Só então a próxima fatia começa.
+5. **Uma base SQLite local, com backup em zip desde a fatia 1.** Seus dados de estudo nunca ficam reféns de refatoração.
+
+---
+
+## 11. Decisões em aberto (para a próxima conversa)
+
+1. **Plataforma**: ~~Streamlit/Dash vs. web~~ → **DECIDIDO (§10): web app local — FastAPI + Jinja + HTMX + PDF.js, núcleo em pacote Python puro com SQLite.** Streamlit bateria no teto no leitor de PDF com grifos e no timer de sessão.
 2. **Uso pessoal ou produto?** Muda tudo em autenticação, hospedagem e polimento.
 3. **Qual concurso/banca alvo?** (CESPE/Cebraspe, FGV, FCC...) O estilo da banca influencia o modelo (certo/errado vs. múltipla escolha muda a métrica de proficiência).
 4. **Banco de questões**: ~~registrar manualmente vs. questões internas~~ → em boa parte resolvido pela extração das questões comentadas dos PDFs do Estratégia (seção 6.3). Resta decidir se também registramos baterias feitas fora (QConcursos/TEC) de forma manual.

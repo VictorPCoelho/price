@@ -217,7 +217,70 @@ O algoritmo moderno do Anki (FSRS) é open source e tem implementação em Pytho
 
 ---
 
-## 8. Decisões em aberto (para a próxima conversa)
+## 8. "Quanto falta?" — estimativa de horas até o objetivo
+
+Sim, dá para estimar — e esse deveria ser **o número central do dashboard**, porque responde a pergunta emocional do concurseiro: *"vou conseguir chegar lá a tempo?"*
+
+### 8.1 A lógica do estimador
+
+Cada tópico pendente tem um **custo estimado em horas**, decomposto pelo que falta na máquina de estados:
+
+```
+custo(tópico) =
+    horas_teoria     = páginas restantes ÷ velocidade de leitura (págs/h)
+  + horas_questões   = questões alvo × tempo médio por questão
+  + horas_revisão    = ~15–20% do acumulado (revisões 1d/7d/30d são curtas, mas existem)
+
+horas_restantes(objetivo) = Σ custo(tópicos pendentes no escopo do objetivo)
+```
+
+O "objetivo" é configurável: fechar o edital inteiro, fechar uma disciplina, ou levar um conjunto de tópicos à proficiência ≥ 80%.
+
+### 8.2 Frio no começo, preciso com o uso (o pulo do gato)
+
+- **Dia zero**: usa defaults calibrados (ex.: ~10 págs/h para teoria densa de PDF do Estratégia, ~25 questões/h) e o total de páginas extraído dos PDFs importados → já sai uma estimativa honesta na primeira semana.
+- **Com o uso**: cada sessão registrada refina os parâmetros **pessoais e por disciplina** (média móvel): sua velocidade em Direito Administrativo não é a mesma que em Raciocínio Lógico. A estimativa converge para a *sua* realidade.
+
+### 8.3 Confronto com a capacidade — a conta que ninguém quer fazer (e a ferramenta faz)
+
+```
+capacidade = horas líquidas/semana (medidas, não prometidas) × semanas até a prova
+
+se horas_restantes > capacidade  →  MODO REALISTA:
+```
+
+Quando não cabe, a ferramenta não mente — ela **sugere cortes com base no score de prioridade**:
+- trocar aula completa por resumo/mapa mental nas disciplinas de score baixo;
+- reduzir o alvo de questões em tópicos de baixa frequência na banca;
+- mostrar o trade-off: "cortando X e Y, a projeção passa a caber com 2 semanas de folga".
+
+Visualização: **burndown chart** (horas restantes × tempo, como em sprint) com a linha da data da prova. A cada semana o gráfico mostra se o ritmo real sustenta a meta.
+
+---
+
+## 9. Benchmark e complementos: Estudei e Mapas da Lulu
+
+### 9.1 Estudei ([estudei.com.br](https://estudei.com.br/)) — o que validar e copiar
+
+O Estudei é hoje a referência comercial de *gestão* de estudos: ciclo com matérias verticalizadas, cronograma automático adaptado ao ritmo, revisões programadas, registro de horas/páginas/aulas, indicadores de constância e **mapa de dificuldades × facilidades**. Dois detalhes deles valem incorporar:
+
+1. **Streak de constância com "check" diário** — cada dia planejado e cumprido rende um check; pular quebra a sequência. Gamificação mínima e eficaz (mesma mecânica do Duolingo). Encaixa direto no nosso dashboard de constância.
+2. **Registro em múltiplas unidades** (horas, páginas lidas, aulas assistidas) — nosso modelo de sessão já prevê tempo e páginas; vale acrescentar "aulas/vídeos" como unidade.
+
+**O que o Estudei NÃO faz (nosso diferencial)**: ele gerencia *agenda*, mas não *entende o conteúdo*. Não lê os PDFs, não extrai questões, não gera cards, não tem camada de IA, não fecha o ciclo com o Anki. Nossa ferramenta é "Estudei + cérebro sobre o material".
+
+### 9.2 Mapas da Lulu ([mapasdalulu.com.br](https://mapasdalulu.com.br/)) — mapas mentais como ativo de revisão
+
+Os Mapas da Lulu (≈1.900 mapas, 40+ disciplinas, com mnemônicos, lei seca, jurisprudência e pegadinhas) são material de **revisão rápida** — o complemento perfeito para as revisões 1d/7d/30d, onde reler o PDF inteiro é inviável. Integrações possíveis:
+
+1. **Mapas como ativo vinculado ao tópico**: importar os PDFs dos mapas comprados e vinculá-los ao edital verticalizado, igual às aulas. Na hora da revisão, a ferramenta abre o mapa do tópico (não a aula de 150 páginas).
+2. **Mapa → Anki via image occlusion**: ocultar ramos do mapa mental vira um card visual poderoso (seção 7.1). Um mapa rende dezenas de cards.
+3. **Geração automática de mapas** (fase 3): o LLM gera um mapa mental do tópico a partir do resumo do PDF do Estratégia (saída em Markmap/Mermaid, renderizável na própria ferramenta). Você teria "Mapas da Lulu automáticos" do seu próprio material — e os da Lulu como padrão-ouro de qualidade/formato a imitar.
+4. **Modo véspera de prova**: sequência só de mapas + flashcards com maior taxa de lapso, ordenada por score de prioridade.
+
+---
+
+## 10. Decisões em aberto (para a próxima conversa)
 
 1. **Plataforma**: app web local (Streamlit/Dash — stack que você já domina no projeto de precificação) vs. web hospedado vs. mobile-first? Sugestão inicial: **Streamlit/Dash local com SQLite** — rápido de construir e validar o modelo.
 2. **Uso pessoal ou produto?** Muda tudo em autenticação, hospedagem e polimento.
@@ -226,3 +289,5 @@ O algoritmo moderno do Anki (FSRS) é open source e tem implementação em Pytho
 5. **Revisão**: fixa 24h/7d/30d (simples, previsível) vs. SM-2 adaptativo (melhor, porém mais complexo)?
 6. **Leitor de PDF**: embutido na ferramenta (sessão automática, grifos integrados — mais trabalho de construir) vs. ler fora e registrar só o progresso (MVP mais rápido)?
 7. **Flashcards**: exportar para o Anki (`.apkg`/AnkiConnect — esforço baixo, app mobile pronto) vs. revisão espaçada interna com FSRS (experiência unificada, mais trabalho)? Sugestão: Anki primeiro, interno depois.
+8. **Mapas mentais**: só importar/vincular os da Lulu (simples) vs. também gerar mapas automáticos com LLM (Markmap/Mermaid) a partir dos resumos?
+9. **Estimador de horas**: qual objetivo padrão exibir no dashboard — fechar o edital, fechar a disciplina atual, ou proficiência ≥ 80% nos tópicos de maior peso?
